@@ -6,9 +6,9 @@ import { existsSync, readFileSync } from "node:fs"
 import {
   EXIT,
   bullet,
+  loadProfilesJson,
   manifestPath,
   parseArgs,
-  parseLuaFile,
   parseTsv,
   profilesPath,
   tableText,
@@ -43,23 +43,16 @@ for (const col of header) if (!KNOWN.includes(col)) warn(0, col, `未知列（�
 let profileNames = null
 let snapshotTokens = new Set()
 const profPath = profilesPath(args)
-if (existsSync(profPath)) {
-  try {
-    const { value, hashComment } = parseLuaFile(profPath)
-    profileNames = new Set(Object.keys(value.mic_profiles ?? {}))
-    snapshotTokens = new Set(Object.keys(value.mic_snapshots ?? {}))
-    if (hashComment) {
-      warn(
-        0,
-        "mic",
-        `${profPath} 用了 \`#\` 注释 —— 合法 Lua 没有这种注释，将来 dofile 它会语法错（本工具自己容忍，mic 名字照常校验）`,
-      )
-    }
-  } catch (e) {
-    warn(0, "mic", `${profPath} 读不动（${e.message}）—— mic 名字先不校验`)
+try {
+  const j = loadProfilesJson(args)
+  if (j.ok) {
+    profileNames = new Set(Object.keys(j.value.mic_profiles ?? {}))
+    snapshotTokens = new Set(Object.keys(j.value.mic_snapshots ?? {}))
+  } else {
+    warn(0, "mic", `${profPath} 读不动（${j.error ?? "没有这个文件"}）—— mic 名字先不校验`)
   }
-} else {
-  warn(0, "mic", `没有 ${profPath} —— mic 名字先不校验`)
+} catch (e) {
+  warn(0, "mic", `${profPath} 读不动（${e.message}）—— mic 名字先不校验`)
 }
 
 // ---------------------------------------------------------------- 逐行

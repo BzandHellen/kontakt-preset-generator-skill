@@ -195,7 +195,7 @@ export default Plugin.define({
       editor.add({
         name: "profiles",
         description:
-          "看工作区 manifest/profiles.lua：defaults（缺省值）、pan_by_section（声部声像）、mic_aliases（库 → " +
+          "看工作区 manifest/profiles.json：defaults（缺省值）、pan_by_section（声部声像）、mic_aliases（库 → " +
           "标准名 → 该库 group 名）、mic_profiles（各麦克风 dB，支持 -math.huge = 关掉）。只读；" +
           "写回等「是否改单一来源 JSON」定了再说。顺带会指出文件里的 `#` 注释（dofile 会语法错）。",
         input: {
@@ -389,12 +389,16 @@ export default Plugin.define({
             visual: { type: "boolean", description: "摆对照槽，不退出，给人看 mixer" },
             patch: { type: "array", items: { type: "string" }, description: "visual 模式要摆的 .nki；第 1 个是对照组" },
             multiName: { type: "string", description: "visual 模式的 multi 名" },
+            pair: {
+              type: "array",
+              items: { type: "string" },
+              description: "visual 模式：\"<.nki>|<.nksn>\"，每个槽各自的 patch 与快照（快照留空 = 该槽当对照）。两个库可混在一个 multi 里",
+            },
             dryRun: { type: "boolean" },
             timeout: { type: "number" },
             exe: { type: "string" },
             workspace: WORKSPACE,
           },
-          required: ["snapshot"],
           additionalProperties: false,
         },
         options: { namespace: "kontakt", codemode: true },
@@ -402,7 +406,7 @@ export default Plugin.define({
           const i = input as Record<string, unknown>
           const args = ["snapshot", "nkm", "multi", "slots", "out", "exe", "timeout", "workspace"].flatMap((k) => opt(k, i[k]))
           args.push(...opt("out-dir", i.outDir), ...opt("multi", i.multiName))
-          args.push(...opt("patch", i.patch), ...opt("force", i.force), ...opt("visual", i.visual), ...opt("dry-run", i.dryRun))
+          args.push(...opt("patch", i.patch), ...opt("pair", i.pair), ...opt("force", i.force), ...opt("visual", i.visual), ...opt("dry-run", i.dryRun))
           return text(await run("apply-snapshot.mjs", args, 900_000, 120_000))
         },
       })
@@ -438,6 +442,27 @@ export default Plugin.define({
           args.push(...opt("patch", i.patch), ...opt("mic", i.mic), ...opt("keyword", i.keyword))
           args.push(...opt("write", i.write), ...opt("force", i.force), ...opt("dry-run", i.dryRun))
           return text(await run("learn-mic.mjs", args, 900_000, 120_000))
+        },
+      })
+
+      editor.add({
+        name: "migrate_profiles",
+        description:
+          "一次性迁移：把工作区的 `manifest\\profiles.lua` 转成 `profiles.json`（原名留成 .bak）。\n" +
+          "背景：这份配置只有 Node 工具在读（Kontakt 侧的 Lua 一个都不读它），JSON 读写都是原生的。\n" +
+          "`-math.huge`（把麦克风关掉）会写成字符串 `\"off\"` —— 和清单里 `mic = CLOSE=off` 的内联写法一致。",
+        input: {
+          type: "object",
+          properties: {
+            workspace: WORKSPACE,
+            force: { type: "boolean", description: "允许覆盖已存在的 profiles.json" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          return text(await run("migrate-profiles.mjs", [...opt("workspace", i.workspace), ...opt("force", i.force)], 60_000))
         },
       })
 

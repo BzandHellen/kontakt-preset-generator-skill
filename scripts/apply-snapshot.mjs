@@ -26,40 +26,67 @@ const repDir = reportsDir(args)
 const timeoutS = args.num("timeout", 180)
 const stamp = stampText()
 const snapshot = args.get("snapshot", "") ? resolve(args.get("snapshot")) : ""
+const pairs = args.getAll("pair").filter(Boolean)
 
-if (!snapshot) {
-  console.error("[用法] 要 --snapshot=<某个 .nksn>")
+if (!snapshot && !pairs.length) {
+  console.error("[用法] 要 --snapshot=<某个 .nksn>（或 --visual --pair=\"<.nki>|<.nksn>\"）")
   process.exit(EXIT.USAGE)
 }
-if (!existsSync(snapshot)) {
+if (snapshot && !existsSync(snapshot)) {
   console.error(`[用法] snapshot 文件不存在：${snapshot}`)
   process.exit(EXIT.USAGE)
 }
 
 // ---------------------------------------------------------------- 对照模式
 if (args.bool("visual")) {
-  const patches = args.getAll("patch").filter(Boolean).map((p) => resolve(p))
-  if (!patches.length) {
-    console.error("[用法] --visual 要至少给一个 --patch=<.nki>（会摆成：第 1 槽当对照组，其余套 snapshot）")
-    process.exit(EXIT.USAGE)
+  let entries
+  if (pairs.length) {
+    // 每个槽各自的 patch 与 snapshot（snapshot 留空 = 该槽是对照组）；两库可以混在一个 multi 里
+    entries = pairs.map((p, i) => {
+      const [patchRaw, snapRaw = ""] = p.split("|")
+      const patch = resolve(String(patchRaw).trim())
+      const snap = String(snapRaw).trim() ? resolve(String(snapRaw).trim()) : ""
+      return {
+        path: patch.replace(/\\/g, "/"),
+        label: `${i + 1}. ${basename(patch).replace(/\.nki$/i, "")}${snap ? " + snap" : "（对照）"}`,
+        name: `SNAP${i + 1} ${basename(patch).replace(/\.nki$/i, "")}`.slice(0, 60),
+        snapshot: snap.replace(/\\/g, "/"),
+      }
+    })
+    const badPair = entries.filter((e) => !existsSync(e.path) || (e.snapshot && !existsSync(e.snapshot)))
+    if (badPair.length) {
+      console.error(`[用法] 这些文件不存在：\n  ${badPair.map((e) => e.path + (e.snapshot ? `  +  ${e.snapshot}` : "")).join("\n  ")}`)
+      process.exit(EXIT.USAGE)
+    }
+  } else {
+    const patches = args.getAll("patch").filter(Boolean).map((p) => resolve(p))
+    if (!patches.length) {
+      console.error("[用法] --visual 要 --pair=\"<.nki>|<.nksn>\"（可多个），或 --patch=<.nki>（第 1 个当对照组）")
+      process.exit(EXIT.USAGE)
+    }
+    const bad = patches.filter((p) => !existsSync(p))
+    if (bad.length) {
+      console.error(`[用法] 这些 patch 不存在：\n  ${bad.join("\n  ")}`)
+      process.exit(EXIT.USAGE)
+    }
+    entries = patches.map((p, i) => ({
+      path: p.replace(/\\/g, "/"),
+      label: `${i + 1}. ${basename(p).replace(/\.nki$/i, "")}`,
+      name: `SNAP${i + 1} ${basename(p).replace(/\.nki$/i, "")}`.slice(0, 60),
+      snapshot: i === 0 ? "" : snapshot.replace(/\\/g, "/"), // 第 1 槽不套 = 对照组
+    }))
   }
-  const bad = patches.filter((p) => !existsSync(p))
-  if (bad.length) {
-    console.error(`[用法] 这些 patch 不存在：\n  ${bad.join("\n  ")}`)
-    process.exit(EXIT.USAGE)
-  }
+
   const report = join(repDir, `visual-${stamp}.txt`).replace(/\\/g, "/")
-  const entries = patches.map((p, i) => ({
-    path: p.replace(/\\/g, "/"),
-    label: `${i + 1}. ${basename(p).replace(/\.nki$/i, "")}`,
-    name: `SNAP${i + 1} ${basename(p).replace(/\.nki$/i, "")}`.slice(0, 60),
-    snapshot: i === 0 ? "" : snapshot.replace(/\\/g, "/"), // 第 1 槽不套 = 对照组
-  }))
   const rendered = renderJob("job_snapshot_visual.lua", { multi: args.get("multi", "SNAPSHOT TEST"), report, entries }, { args, slug: `visual-${stamp}` })
 
   console.log(bullet("snapshot 对照（会留着不退出，给你看 mixer）"))
-  console.log(`snapshot：${snapshot}`)
-  console.log(`对照槽：第 1 槽不套；其余 ${entries.length - 1} 槽套上`)
+  console.log(
+    tableText(
+      ["槽", "装上什么", "套的快照"],
+      entries.map((e, i) => ({ 槽: i, 装上什么: e.label.replace(/^\d+\. /, ""), 套的快照: e.snapshot ? basename(e.snapshot) : "（不套 = 对照）" })),
+    ),
+  )
   console.log(`作业：${rendered.file}`)
   const pf = preflight(args)
   if (pf.notes.length) console.log(`\n注意：${pf.notes.join("；")}`)

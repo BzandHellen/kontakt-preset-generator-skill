@@ -29,6 +29,9 @@
 | `config/` | 本机配置：库扫描根（真文件 gitignore，只留 `.example.jsonc`） |
 | `data/` | 扫库生成的 patch 索引（可重建，不进 git） |
 
+配置 `profiles.json` **在工作区**（`<工作区>\manifest\profiles.json`）—— 它是你的数据，不进这个仓库。
+从旧的 `profiles.lua` 迁过来用 `kontakt_migrate_profiles`（或 `node scripts/migrate-profiles.mjs`）。
+
 作业落在工作区 `<工作区>\jobs\<时间戳>-<slug>\job.lua`：一个 Lua 脚本 + 配置内嵌，可直接看懂、也能自己手动跑。
 
 只跑 Node 标准库，不依赖 PowerShell。脚本都能单独跑：

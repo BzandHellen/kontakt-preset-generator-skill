@@ -1,41 +1,33 @@
-// scripts/profiles.mjs —— 看库级默认与习惯值（工作区 manifest/profiles.lua）
+// scripts/profiles.mjs —— 看库级默认与习惯值（工作区 manifest/profiles.json）
 //
-// M1 只读：写回等「profiles 是否改单一来源 JSON」定了再说。
+// 2026-10-17 起这份配置是 JSON（原来叫 profiles.lua）。原因：只有 Node 工具读它
+// （Kontakt 侧的 Lua 一个都不读），JSON 读写都是原生的，不用再啃 Lua 字面量。
+// 迁移用 scripts/migrate-profiles.mjs；旧的 profiles.lua 会留成 .bak。
 
 import { existsSync } from "node:fs"
-import { EXIT, bullet, parseArgs, parseLuaFile, profilesPath, tableText } from "./lib.mjs"
+import { EXIT, bullet, legacyProfilesPath, loadProfilesJson, parseArgs, profilesPath, tableText } from "./lib.mjs"
 
 const args = parseArgs()
 const path = profilesPath(args)
 const section = args.get("section", "all")
 
-if (!existsSync(path)) {
-  console.error(`[用法] 找不到 ${path}`)
+const j = loadProfilesJson(args)
+if (!j.ok) {
+  console.error(`[用法] ${j.error ? `读不动 ${path}：${j.error}` : `找不到 ${path}`}`)
+  if (existsSync(legacyProfilesPath(args))) {
+    console.error(`       工作区里还有 profiles.lua —— 跑 kontakt_migrate_profiles 转成 profiles.json`)
+  }
   process.exit(EXIT.USAGE)
 }
-
-let parsed
-try {
-  parsed = parseLuaFile(path)
-} catch (e) {
-  console.error(`[用法] ${path} 解析失败：${e.message}`)
-  process.exit(EXIT.USAGE)
-}
-const { value, hashComment } = parsed
+const value = j.value
 
 if (args.bool("json")) {
-  console.log(JSON.stringify(value, (k, v) => (v === -Infinity ? "-math.huge" : v === Infinity ? "math.huge" : v), 2))
+  console.log(JSON.stringify(value, null, 2))
   process.exit(EXIT.OK)
 }
 
 console.log(bullet("profiles"))
 console.log(`文件：${path}`)
-if (hashComment) {
-  console.log(
-    `⚠ 这份文件里有 \`#\` 开头的行注释。合法 Lua 没有这种注释 —— 现在能读是因为本工具自己容忍它，\n` +
-      `  但 \`dofile()\` 会直接语法错，将来 gen_multis.lua 读它就会失败。建议改成 \`--\`。`,
-  )
-}
 
 const show = (s) => section === "all" || section === s
 
@@ -48,12 +40,7 @@ if (show("defaults")) {
 if (show("pan_by_section")) {
   const p = value.pan_by_section ?? {}
   console.log(bullet("pan_by_section —— 声部默认声像"))
-  console.log(
-    tableText(
-      ["声部", "pan"],
-      Object.entries(p).map(([k, v]) => ({ 声部: k, pan: fmt(v) })),
-    ),
-  )
+  console.log(tableText(["声部", "pan"], Object.entries(p).map(([k, v]) => ({ 声部: k, pan: fmt(v) }))))
 }
 
 if (show("mic_aliases")) {
@@ -70,7 +57,7 @@ if (show("mic_aliases")) {
 
 if (show("mic_profiles")) {
   const p = value.mic_profiles ?? {}
-  console.log(bullet("mic_profiles —— 麦克风比例（dB）"))
+  console.log(bullet("mic_profiles —— 麦克风比例（dB；\"off\" = 关掉）"))
   const rows = []
   for (const [name, spec] of Object.entries(p)) {
     const entries = Object.entries(spec ?? {})
@@ -79,19 +66,31 @@ if (show("mic_profiles")) {
   }
   console.log(tableText(["profile", "麦克风", "dB"], rows))
 
-  // 顺带体检：值必须是数字或 -inf
   const bad = []
   for (const [name, spec] of Object.entries(p)) {
     for (const [mic, db] of Object.entries(spec ?? {})) {
-      if (typeof db !== "number") bad.push(`${name}.${mic} = ${JSON.stringify(db)}`)
+      if (typeof db !== "number" && db !== "off") bad.push(`${name}.${mic} = ${JSON.stringify(db)}`)
     }
   }
-  if (bad.length) console.log(`\n⚠ 这些值不是数字：${bad.join("；")}`)
+  if (bad.length) console.log(`\n⚠ 这些值既不是数字也不是 "off"：${bad.join("；")}`)
+}
+
+if (show("mic_snapshots")) {
+  const s = value.mic_snapshots ?? {}
+  console.log(bullet("mic_snapshots —— 加密/Player 库的麦克风通路（.nksn）"))
+  const rows = []
+  for (const [tok, v] of Object.entries(s)) {
+    if (typeof v === "string") rows.push({ token: tok, 规则: "整库一个文件", 路径: v })
+    else if (Array.isArray(v)) {
+      for (const rule of v) rows.push({ token: tok, 规则: `match=${rule.match ?? "（任意）"}`, 路径: rule.path ?? "" })
+    }
+  }
+  console.log(rows.length ? tableText(["token", "规则", "路径"], rows) : "（空）")
 }
 
 function fmt(v) {
-  if (v === Infinity) return "math.huge"
-  if (v === -Infinity) return "-math.huge（关掉）"
+  if (v === "off") return "off（关掉）"
+  if (v === Infinity) return "inf"
   if (Array.isArray(v)) return v.join(" / ")
   if (v && typeof v === "object") return "{}"
   return String(v)

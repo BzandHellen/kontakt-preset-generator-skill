@@ -67,7 +67,22 @@ export function manifestPath(args) {
 }
 
 export function profilesPath(args) {
-  return resolve(args?.get?.("profiles") || join(workspaceDir(args), "manifest", "profiles.lua"))
+  return resolve(args?.get?.("profiles") || join(workspaceDir(args), "manifest", "profiles.json"))
+}
+
+// 迁移前的旧文件；只有 migrate-profiles 与提示信息会用到
+export function legacyProfilesPath(args) {
+  return resolve(join(workspaceDir(args), "manifest", "profiles.lua"))
+}
+
+export function loadProfilesJson(args) {
+  const p = profilesPath(args)
+  if (!existsSync(p)) return { path: p, ok: false, value: {} }
+  try {
+    return { path: p, ok: true, value: JSON.parse(readFileSync(p, "utf8")) }
+  } catch (e) {
+    return { path: p, ok: false, value: {}, error: e.message }
+  }
 }
 
 export function reportsDir(args) {

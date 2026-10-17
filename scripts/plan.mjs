@@ -5,7 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { EXIT, UsageError, manifestPath, noteToMidi, parseLuaFile, parseTsv, profilesPath, readCsv, writeCsv, workspaceDir } from "./lib.mjs"
+import { EXIT, UsageError, legacyProfilesPath, loadProfilesJson, manifestPath, noteToMidi, parseTsv, profilesPath, readCsv, writeCsv, workspaceDir } from "./lib.mjs"
 
 export const SECTIONS = ["STR", "BRS", "WW", "PERC", "ETH", "CHO"]
 const PORTS = { A: 0, B: 1, C: 2, D: 3 }
@@ -55,14 +55,17 @@ function findSection(name, panBySection) {
 }
 
 export function loadProfiles(args) {
-  const p = profilesPath(args)
-  if (!existsSync(p)) return { path: p, value: {}, ok: false }
-  try {
-    const { value } = parseLuaFile(p)
-    return { path: p, value, ok: true }
-  } catch (e) {
-    return { path: p, value: {}, ok: false, error: e.message }
+  const j = loadProfilesJson(args)
+  if (j.ok) return { path: j.path, value: j.value, ok: true }
+  if (existsSync(legacyProfilesPath(args))) {
+    return {
+      path: j.path,
+      value: {},
+      ok: false,
+      error: `工作区里还是 profiles.lua —— 先跑 kontakt_migrate_profiles（或 node scripts/migrate-profiles.mjs）转成 profiles.json`,
+    }
   }
+  return { path: j.path, value: {}, ok: false, error: "没有 profiles.json" }
 }
 
 // mic 列 → { mode, spec, aliases, snapshotPath, note }

@@ -126,78 +126,37 @@ if (usable.length) {
 // ---------------------------------------------------------------- 写回（可选）
 if (args.bool("write") && usable.length) {
   if (!prof.ok) {
-    console.log(`\n[写回失败] 读不到 profiles：${prof.path}`)
+    console.log(`\n[写回失败] 读不到 profiles：${prof.path}${prof.error ? `（${prof.error}）` : ""}`)
   } else {
-    const line = `    ${name} = { ${usable.map((r) => `${r.mic} = ${fmt(r.min)}`).join(", ")} },`
-    const r = writeProfile(prof.path, name, line, args.bool("force"))
-    console.log(`\n---- 写回 profiles.lua ----`)
-    console.log(r.ok ? `  ✅ ${r.message}` : `  ⛔ ${r.message}`)
+    const spec = {}
+    for (const r of usable) spec[r.mic] = Number(fmt(r.min))
+    const res2 = writeProfileJson(prof.path, name, spec, args.bool("force"))
+    console.log(`\n---- 写回 profiles ----`)
+    console.log(res2.ok ? `  ✅ ${res2.message}` : `  ⛔ ${res2.message}`)
   }
 } else if (!args.bool("write")) {
-  console.log(`\n（没有写回 profiles.lua —— 你自己粘。要自动写回加 --write，会先备份 .bak。）`)
+  console.log(`\n（没有写回 profiles —— 你自己粘。要自动写回加 --write，会先备份 .bak。）`)
 }
 console.log(`\n结论：${protectedLibs.length ? "加密库 —— 学不出来，走 snapshot" : usable.length ? `学出 ${usable.length} 个值` : "没学到可用值"}`)
 process.exit(res.fails ? EXIT.ISSUES : EXIT.OK)
 
-// ---------------------------------------------------------------- 往 profiles.lua 的 mic_profiles 里插/换一条
-// 保守做法：定位 `mic_profiles` 后的第一个 `{`，用括号计数找到配对的 `}`，
-// 在这之前插入（若同名条目已存在则替换那一行）。先写 .bak。
-function writeProfile(path, profileName, line, force) {
+// ---------------------------------------------------------------- 往 profiles.json 的 mic_profiles 里写一条
+// JSON 就是原生了：读 → 改 → 写回（先备份 .bak）。不用再数字符括号。
+function writeProfileJson(path, profileName, spec, force) {
   const text = readFileSync(path, "utf8")
-  const at = text.indexOf("mic_profiles")
-  if (at < 0) return { ok: false, message: `profiles.lua 里找不到 mic_profiles（${path}）` }
-  const open = text.indexOf("{", at)
-  if (open < 0) return { ok: false, message: "找不到 mic_profiles 的 { " }
-
-  // 括号计数（跳过字符串与注释）
-  let depth = 0
-  let end = -1
-  let inStr = null
-  for (let i = open; i < text.length; i++) {
-    const c = text[i]
-    if (inStr) {
-      if (c === "\\") i++
-      else if (c === inStr) inStr = null
-      continue
-    }
-    if (c === '"' || c === "'") {
-      inStr = c
-      continue
-    }
-    if (c === "-" && text[i + 1] === "-") {
-      const nl = text.indexOf("\n", i)
-      i = nl < 0 ? text.length : nl
-      continue
-    }
-    if (c === "{") depth++
-    else if (c === "}") {
-      depth--
-      if (depth === 0) {
-        end = i
-        break
-      }
-    }
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return { ok: false, message: `profiles.json 不是合法 JSON：${e.message}` }
   }
-  if (end < 0) return { ok: false, message: "mic_profiles 的括号没配对" }
-
-  const body = text.slice(open + 1, end)
-  const existing = new RegExp(`^[ \\t]*${profileName}[ \\t]*=.*$`, "m")
-  let next
-  if (existing.test(body)) {
-    if (!force) return { ok: false, message: `mic_profiles 里已经有 ${profileName} 了（要覆盖加 --force）` }
-    next = text.slice(0, open + 1) + body.replace(existing, line) + text.slice(end)
-  } else {
-    // 插在收尾之前：保留原有的缩进风格
-    const trimmed = body.replace(/[ \t]+\n?$/, "")
-    next = text.slice(0, open + 1) + trimmed + "\n" + line + "\n" + text.slice(end)
-  }
-
+  data.mic_profiles = data.mic_profiles ?? {}
+  const exists = Object.prototype.hasOwnProperty.call(data.mic_profiles, profileName)
+  if (exists && !force) return { ok: false, message: `mic_profiles 里已经有 ${profileName} 了（要覆盖加 --force）` }
+  data.mic_profiles[profileName] = spec
   writeFileSync(`${path}.bak`, text, "utf8")
-  writeFileSync(path, next, "utf8")
-  return {
-    ok: true,
-    message: `${existing.test(body) ? "替换" : "插入"} mic_profiles.${profileName}；原文件已备份到 ${path}.bak`,
-  }
+  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf8")
+  return { ok: true, message: `${exists ? "替换" : "插入"} mic_profiles.${profileName}；原文件已备份到 ${path}.bak` }
 }
 
 function stampText() {

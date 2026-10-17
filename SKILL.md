@@ -16,7 +16,7 @@ description: >-
 相对路径都相对本目录：`scripts/`（Node 脚本）、`plugin/`（工具插件）、`data/`（索引）、`config/`（本机配置）。
 
 **工作区（数据与产物在那边，不在本仓库）**：`C:\VEPRO\Kontakt Patch`
-—— 清单 `manifest\manifest.tsv`、库级默认 `manifest\profiles.lua`、产物 `Generated\`、报告 `Reports\`。
+—— 清单 `manifest\manifest.tsv`、库级默认 `manifest\profiles.json`、产物 `Generated\`、报告 `Reports\`。
 方案与实测证据在工作区 `README.md` 与 `docs\Kontakt-Lua-发现与坑.md`（**动手前先读那份**）。
 
 ## 已注册的工具（OpenChamber / Code Mode 直接调用）
@@ -29,14 +29,14 @@ description: >-
 | `kontakt_db_build` | 否 | 扫库建 `data/kontakt-patches.csv`（Library / RelDir / PatchFile / 大小 / 路径） |
 | `kontakt_db_query` | 否 | 查索引拿精确 `.nki` 路径（`--patch` / `--folder` 是正则，其余子串） |
 | `kontakt_manifest_lint` | 否 | 清单体检：必填列、文件存在、slot/midi/port/out/vol/pan、multi 名、mic profile |
-| `kontakt_profiles` | 否 | 看 `profiles.lua`：defaults / pan_by_section / mic_aliases / mic_profiles |
+| `kontakt_profiles` | 否 | 看 `profiles.json`：defaults / pan_by_section / mic_aliases / mic_profiles / mic_snapshots |
 | `kontakt_reports` | 否 | 汇总 `Reports\*.txt`（列表 / 单份明细 / 写 `manifest.verify.csv`） |
 | `kontakt_gen_multi` | **是** | 清单 → `.nkm`（A1–A6），存盘后重载回读并与期望值自动比对 |
 | `kontakt_inspect_multi` | **是** | 侦察 `.nkm`：槽位参数、库是否加密、group 名普查、麦克风读数（只读） |
 | `kontakt_verify_multi` | **是** | 回读已有 `.nkm` 并与 `Generated\_expect\<multi>.csv` 比对 |
 | `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API；**`structure=true` 探技法/力度层是脚本还是原生**（只读） |
 | `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**加密库的麦克风唯一通路**）；`visual=true` 摆对照槽不退出给人看 |
-| `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印片段；`write=true` 直接写回 `profiles.lua`（先备份 `.bak`） |
+| `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印片段；`write=true` 直接写回 `profiles.json`（先备份 `.bak`） |
 | `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
@@ -121,13 +121,11 @@ description: >-
 
 - **M1 已完成**（harness 工具接口验过）：`env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua`。
 - **M2 已完成**（真跑 Kontakt 验过）：`gen_multi` / `inspect_multi` / `verify_multi` / `probe_library`。
-- **M3 已完成**（真跑验过）：`apply_snapshot`（含 `--visual` 对照）/ `learn_mic`（含 `--write` 写回 profiles）；
-  未加密库正向验证成功（`MSB Horn1` 的 `CLOSE=-6` 存盘重载后仍是 −6，`others=off` 关掉 336 个 group）。
-- **M3+ 已完成**：`snapshot`（`.nksn` 只读体检）、`probe_library --structure`（技法/力度层是脚本还是原生）、
-  `verify_multi` 基线判定（能从清单读库里默认值，区分「库复位」与「真不一致」）；
-  并实测**原生 start 条件可写可持久**（见核心事实第 10 条）。
-- 新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
-- M4：`to_vepro`（可选）。
+- **M3 已完成**（真跑验过）：`apply_snapshot`（含 `--visual` 对照）/ `learn_mic`（含 `--write` 写回）。
+- **M3+ 已完成**：`snapshot`（`.nksn` 只读体检）、`probe_library --structure`、`verify_multi` 基线判定、
+  `migrate_profiles`（`profiles.lua` → `profiles.json`）；并实测**原生 start 条件可写可持久**。
+- 15 个工具。新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
+- M4：`to_vepro`（可选，尚未决定）。
 
 ## 维护
 
@@ -139,5 +137,8 @@ description: >-
 - 插件注册：`C:\Users\Administrator\.config\opencode\plugins\kontakt-preset-generator-skill`
   → junction 到本目录的 `plugin\`（`plugins/` 下的目录会被自动发现）。
 - 改了插件代码：`opencode reload` 即可（比重启服务轻，不用 `opencode service restart`）。
+- ⛔ **改工作区里的中文文件（`README.md` / `docs\*.md`）一律用编辑工具，不要用 PowerShell 的
+  `Get-Content | Set-Content` 往返** —— PS 5.1 会按 ANSI 读、按 UTF-8+BOM 写，中文直接写坏。
+  本轮这个坑踩了两次（`probe-library.mjs`、工作区 `README.md`）。同样适用于改脚本文件。
 - 细节与踩坑见工作区 `docs\Kontakt-Lua-发现与坑.md`；外部参考：Kontakt Lua API 官方手册
   `https://docs.native-instruments.com/ni-tech-manuals/kontakt-api-reference-manual/en/`
