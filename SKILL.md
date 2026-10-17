@@ -35,6 +35,8 @@ description: >-
 | `kontakt_inspect_multi` | **是** | 侦察 `.nkm`：槽位参数、库是否加密、group 名普查、麦克风读数（只读） |
 | `kontakt_verify_multi` | **是** | 回读已有 `.nkm` 并与 `Generated\_expect\<multi>.csv` 比对 |
 | `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API（只读） |
+| `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**加密库的麦克风唯一通路**）；`visual=true` 摆对照槽不退出给人看 |
+| `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印可粘的 `mic_profiles` 片段（只对未加密库有意义） |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
 ## 核心事实（决定一切设计）
@@ -83,15 +85,25 @@ description: >-
 5. （M2 起）`kontakt_gen_multi` 出 `.nkm` 并自动回读校验；`kontakt_reports` 看体检表。
 6. （M4 起）交 `vepro-api` 灌通道。
 
+## 麦克风的两条路（最重要的规范）
+
+| 库 | 怎么写 | 清单写法 | 能否自动 |
+|---|---|---|---|
+| **未加密**（Performance Samples、Aaron Venture、你自己的 `MSB *.nki` 样板） | 直接写 group 音量 | `mic = CLOSE=-6;others=off` 或 profile 名 | ✅ 全自动，且**能数值验证** |
+| **加密 / Player**（Berlin / CSS / 8Dio / LASS） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = berlin`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
+
+- snapshot **必须人在 UI 里调出来**才有效（脚本改完 group 音量再存是无效的）。
+- snapshot 会**连带承载该库 UI 的其它状态** → 一个库的 snapshot 当「该库的标准状态」维护。
+- 这类库的比例**不落在 group 音量上**，数值读不出来 → 只能人眼确认（`apply_snapshot --visual` 摆对照）。
+- 判「库复位」要看**写之前的基线**：各库基线不同（MSB 0.037 / Berlin 0.001627），不能拿「值很小」当判据。
+
 ## 进度
 
 - **M1 已完成**（harness 工具接口验过）：`env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua`。
-- **M2 已完成**（真跑 Kontakt 验过）：
-  - `gen_multi`：样例清单（5 槽 Berlin Strings）→ `.nkm` 16.5 MB，参数回读 **25/25 一致**，
-    麦克风按「未加密写 group / 加密拦下走 snapshot」分流 + 回读判定「库复位」。
-  - `inspect_multi` / `verify_multi` / `probe_library`（含 `api` 模式）都实跑通过。
-  - 细节与新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
-- M3：`plan`（已作为内部模块）/ `learn_mic` / `apply_snapshot`。
+- **M2 已完成**（真跑 Kontakt 验过）：`gen_multi` / `inspect_multi` / `verify_multi` / `probe_library`。
+- **M3 已完成**（真跑验过）：`apply_snapshot`（含 `--visual` 对照）/ `learn_mic`；
+  未加密库正向验证成功（`MSB Horn1` 的 `CLOSE=-6` 存盘重载后仍是 −6，`others=off` 关掉 336 个 group）。
+- 新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
 - M4：`to_vepro`（可选）。
 
 ## 维护

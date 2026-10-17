@@ -138,7 +138,7 @@ if (expectRows) {
 
   if (micExpect && micExpect.length) {
     const cm = compareMics(micExpect, micActual)
-    const { real, reset, missing } = classifyMicIssues(cm.issues, micActual)
+    const { real, reset, missing } = classifyMicIssues(cm.issues, micActual, { noBaseline: true })
     console.log(`\n---- 麦克风比对（${cm.checks.length} 项：PASS ${cm.checks.filter((c) => c.ok).length} / FAIL ${real.length}）`)
     if (real.length) {
       console.log(
@@ -148,8 +148,9 @@ if (expectRows) {
     } else if (cm.checks.length) console.log("全部一致。")
     if (reset.length) {
       console.log(
-        `\n⚠ ${reset.length} 条写进去又被库复位了（槽 ${[...new Set(reset.map((i) => i.slot))].join("、")}）` +
-          `—— 这类库（加密/Player）不持久化 group 音量，只能靠 snapshot。`,
+        `\n⚠ ${reset.length} 条麦克风与期望不一致（槽 ${[...new Set(reset.map((i) => i.slot))].join("、")}）。\n` +
+          `   verify 是读已存盘的 .nkm，**拿不到"写之前的基线"**，所以没法判定是「库复位」还是「真不一致」——\n` +
+          `   这里只作提醒。要判定请用 gen_multi（它读了写之前的基线，能区分复位与真失败）。`,
       )
     }
     if (missing.length) {

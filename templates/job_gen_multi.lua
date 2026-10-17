@@ -33,6 +33,7 @@ end
 -- ---------------------------------------------------------------- A3 逐槽设参数
 -- 顺序：先 snapshot（它承载库自己 UI 的状态，会连带改一些东西），再设 header 上的参数。
 local libs = {}
+local baselines = {} -- [i] = { [MIC] = { min=, max= } }  写之前读到的基线（判断"库复位"用）
 for i, s in ipairs(JOB.slots) do
   local idx = placed[i]
   if idx then
@@ -55,6 +56,17 @@ for i, s in ipairs(JOB.slots) do
 
     if s.mic and s.mic.mode == "groups" and next(s.mic.spec or {}) ~= nil then
       K.log("  —— 麦克风（直接写 group 音量）——")
+      -- 写之前先读基线：重载后如果值 == 基线，说明是库把它复位了，不是我们写错
+      local keys = {}
+      for k in pairs(s.mic.spec) do
+        if k ~= "others" then keys[#keys + 1] = K.upper(k) end
+      end
+      local base = K.mic_levels(idx, keys, s.mic.aliases)
+      baselines[i] = {}
+      for k, a in pairs(base) do
+        baselines[i][K.upper(k)] = { min = a.min, max = a.max }
+        K.log("     写之前 %-10s n=%3d  min=%s  max=%s", K.upper(k), a.n, tostring(a.min), tostring(a.max))
+      end
       K.apply_group_mics(idx, s.mic.spec, s.mic.aliases)
     elseif s.mic and s.mic.mode == "snapshot" then
       K.log("  —— 麦克风：走 snapshot（加密库，group 音量写不住）——")
@@ -112,7 +124,8 @@ for i, s in ipairs(JOB.slots) do
     local lv = K.mic_levels(idx, keys, s.mic.aliases)
     for _, k in ipairs(keys) do
       local a = lv[k] or { n = 0, min = nil, max = nil }
-      mics[#mics + 1] = { slot = s.slot, mic = k, n = a.n, min = a.min, max = a.max }
+      local b = (baselines[i] or {})[k] or {}
+      mics[#mics + 1] = { slot = s.slot, mic = k, n = a.n, min = a.min, max = a.max, base_min = b.min, base_max = b.max }
     end
   end
 end
@@ -120,7 +133,7 @@ table.sort(mics, function(a, b)
   if tostring(a.slot) ~= tostring(b.slot) then return tostring(a.slot) < tostring(b.slot) end
   return tostring(a.mic) < tostring(b.mic)
 end)
-for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max" }, mics, "MICS")) do K.log(line) end
+for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max", "base_min", "base_max" }, mics, "MICS")) do K.log(line) end
 
 K.log("\n==== end ====")
 K.write_report(JOB.report)

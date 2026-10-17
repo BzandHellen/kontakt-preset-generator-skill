@@ -94,21 +94,36 @@ export function protectedSlots(rows) {
 }
 
 // 麦克风回读不一致时，判一下是哪种：
-//   "reset"   库把它复位回默认（所有值塌成同一个 ≈0 的数）→ 这类库的 group 音量存不住，只能走 snapshot
+//   "reset"   回读值 == **写之前的基线** → 库把它复位了（这类库不持久化 group 音量，只能走 snapshot）
 //   "missing" 该 patch 里根本没有这个名字的 group（n=0）→ 是别名表没覆盖，不是生成出错
 //   "real"    其它不一致 → 真问题
 // 一个槽里只要有一个麦克风是 reset，就认为这个槽的麦克风层不持久化，把它其它不一致也并进 reset。
-export function classifyMicIssues(issues, actualRows) {
+// 注意：不能拿「值很小」当判据 —— 各库的默认基线不一样（MSB 0.037 / Berlin 0.001627），必须比基线。
+export function classifyMicIssues(issues, actualRows, opts = {}) {
   const byKey = new Map(actualRows.map((r) => [`${r.slot}|${String(r.mic).toUpperCase()}`, r]))
   const real = []
   const reset = []
   const missing = []
 
+  const same = (a, b) => {
+    const x = num(a)
+    const y = num(b)
+    if (x === null || y === null) return false
+    if (x === y) return true
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+    return Math.abs(x - y) <= 0.001
+  }
+
   const slotReset = new Set()
-  for (const r of actualRows) {
-    const mn = num(r.min)
-    const mx = num(r.max)
-    if (Number(r.n) > 0 && mn !== null && mx !== null && mn === mx && Math.abs(mn) < 0.01) slotReset.add(String(r.slot))
+  if (opts.noBaseline) {
+    // verify 读的是已存盘的 .nkm，拿不到"写之前的基线" → 不一致只能当提醒，别当 FAIL
+    for (const r of actualRows) if (Number(r.n) > 0) slotReset.add(String(r.slot))
+  } else {
+    for (const r of actualRows) {
+      if (Number(r.n) === 0) continue
+      const backToBase = r.base_min !== undefined && r.base_min !== "" && same(r.min, r.base_min) && same(r.max, r.base_max)
+      if (backToBase) slotReset.add(String(r.slot))
+    }
   }
 
   for (const i of issues) {

@@ -65,31 +65,66 @@ export function loadProfiles(args) {
   }
 }
 
-// mic 列 → { mode, spec, aliases, snapshot, note }
+// mic 列 → { mode, spec, aliases, snapshotPath, note }
 //   ""                 → defaults.mic 的 profile
-//   "berlin_close_main"→ profiles.mic_profiles 里的 profile
+//   "berlin_close_main"→ profiles.mic_profiles 里的 profile（未加密库：写 group 音量）
 //   "CLOSE=-6;TREE=-8" → 内联
-//   "learn:<文件>"     → M3 才有，这里标记出来不静默丢
+//   "snap:<文件>"      → 直接指定 snapshot（加密库：套库自己的 UI 状态）
+//   "<token>"          → 若 profiles.mic_snapshots 里有这个 token，按规则表挑 snapshot；
+//                        否则当 mic_profiles 的 profile 名
+//   "learn:<文件>"     → M3 的 learn_mic 产的 profile 名（这里只标记，不实现）
 function resolveMic(raw, defaults, profiles, patchPath) {
   const text = String(raw || defaults.mic || "").trim()
   const aliases = aliasesFor(patchPath, profiles.mic_aliases)
+
   if (!text || text === "unity") return { mode: "groups", spec: {}, aliases, note: "unity（不改麦克风）" }
+
   if (text.startsWith("learn:")) {
-    return { mode: "skipped", spec: {}, aliases, note: `learn:（M3 才实现，本次跳过）：${text.slice(6)}` }
+    return { mode: "skipped", spec: {}, aliases, note: `learn:（用 learn_mic 先产出 profile，再把 profile 名填进清单）：${text.slice(6)}` }
   }
+
+  if (text.startsWith("snap:")) {
+    return { mode: "snapshot", spec: {}, aliases, snapshotPath: text.slice(5).trim(), note: "snap:（直接指定）" }
+  }
+
+  const snaps = profiles.mic_snapshots?.[text]
+  if (snaps !== undefined) {
+    const picked = pickSnapshot(snaps, patchPath)
+    if (!picked) {
+      return { mode: "skipped", spec: {}, aliases, note: `mic_snapshots.${text} 里没有匹配这个 patch 的规则：${patchPath}` }
+    }
+    return { mode: "snapshot", spec: {}, aliases, snapshotPath: picked, note: `snapshot：${text}` }
+  }
+
   if (text.includes("=")) {
     const spec = {}
     for (const part of text.split(";")) {
       const m = /^\s*([^=]+?)\s*=\s*(.+?)\s*$/.exec(part)
       if (!m) continue
       const v = m[2].toLowerCase()
-      spec[m[1]] = v === "off" || v === "mute" ? "off" : Number(m[2])
+      if (v === "off" || v === "mute" || v === "-math.huge") spec[m[1]] = "off"
+      else spec[m[1]] = Number(m[2])
     }
     return { mode: "groups", spec, aliases, note: "内联" }
   }
+
   const spec = profiles.mic_profiles?.[text]
-  if (!spec) return { mode: "skipped", spec: {}, aliases, note: `profiles 里没有 profile「${text}」` }
+  if (!spec) return { mode: "skipped", spec: {}, aliases, note: `profiles 里既没有 mic_profiles.${text}，也没有 mic_snapshots.${text}` }
   return { mode: "groups", spec, aliases, note: text }
+}
+
+// mic_snapshots 的一条：字符串（整库一个）或规则表 [{ match, path }]（按 patch 路径挑，匹配你的
+// User Content\<库>\<乐器>\Empty.nksn 习惯）。match 是 patch 路径的子串（大小写不敏感）。
+export function pickSnapshot(snaps, patchPath) {
+  const p = String(patchPath || "").toLowerCase().replace(/\\/g, "/")
+  if (typeof snaps === "string") return snaps
+  if (Array.isArray(snaps)) {
+    for (const rule of snaps) {
+      if (!rule || !rule.path) continue
+      if (!rule.match || p.includes(String(rule.match).toLowerCase().replace(/\\/g, "/"))) return rule.path
+    }
+  }
+  return null
 }
 
 // 该 patch 属于哪个库的别名表：拿 mic_aliases 的键（berlin / css …）去比 patch 路径
@@ -159,6 +194,8 @@ export function planManifest(args) {
       const mic = resolveMic(r.get("mic"), defaults, prof.value, r.get("patch"))
       const ks = parseKeysw(r.get("keysw"))
       const explicitPan = r.get("pan") !== ""
+      // mic 走 snapshot 时，把它落到 snapshot 列上（gen 模板里 snapshot 的装载在 header 参数之前）
+      const slotSnapshot = r.get("snapshot") !== "" ? r.get("snapshot") : (mic.snapshotPath ?? "")
       slots.push({
         slot,
         line: r.line,
@@ -171,7 +208,7 @@ export function planManifest(args) {
         pan: explicitPan ? Number(r.get("pan")) : (section !== null ? panBySection[section] : (defaults.pan ?? 0)),
         panFrom: explicitPan ? "清单" : section !== null ? `声部 ${section}` : "defaults",
         mic,
-        snapshot: r.get("snapshot"),
+        snapshot: slotSnapshot,
         options: ks.options,
         keyswRaw: r.get("keysw"),
         note: r.get("note"),
@@ -213,6 +250,8 @@ export function writeExpect(args, m) {
   const micRows = []
   for (const s of m.slots) {
     for (const [k, v] of Object.entries(s.mic.spec ?? {})) {
+      // others 是通配（"其余全关"），不是麦克风名 —— 不进期望表，它的命中数在报告里
+      if (k.toLowerCase() === "others") continue
       micRows.push({ slot: s.slot, mic: k.toUpperCase(), expect: v === "off" ? "-inf" : v })
     }
   }

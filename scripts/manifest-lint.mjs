@@ -41,11 +41,13 @@ for (const col of header) if (!KNOWN.includes(col)) warn(0, col, `未知列（�
 
 // ---------------------------------------------------------------- mic profile 表
 let profileNames = null
+let snapshotTokens = new Set()
 const profPath = profilesPath(args)
 if (existsSync(profPath)) {
   try {
     const { value, hashComment } = parseLuaFile(profPath)
     profileNames = new Set(Object.keys(value.mic_profiles ?? {}))
+    snapshotTokens = new Set(Object.keys(value.mic_snapshots ?? {}))
     if (hashComment) {
       warn(
         0,
@@ -130,11 +132,26 @@ for (const r of rows) {
       const p = mic.slice("learn:".length).trim()
       if (!p) err(L, "mic", "learn: 后面没写文件")
       else if (!existsSync(p)) err(L, "mic", `learn 指的文件不存在：${p}`)
+      else warn(L, "mic", `learn: 是「先手调好再学」的入口 —— 现在还没有自动跑 learn_mic`)
+    } else if (mic.startsWith("snap:")) {
+      const p = mic.slice(5).trim()
+      if (!p) err(L, "mic", "snap: 后面没写文件")
+      else if (!existsSync(p)) err(L, "mic", `snap 指的文件不存在：${p}`)
     } else if (mic.includes("=")) {
-      if (!/^[A-Za-z0-9 _-]+=-?[0-9.]+(;[A-Za-z0-9 _-]+=-?[0-9.]+)*$/.test(mic)) err(L, "mic", `内联写成 \`名=dB;名=dB\`：${mic}`)
+      // 内联：`名=dB`，值可以是数字 / off / mute / -math.huge
+      const one = "[A-Za-z0-9 _-]+=(-?[0-9.]+|off|mute|-math\\.huge)"
+      if (!new RegExp(`^${one}(;${one})*$`).test(mic)) err(L, "mic", `内联写成 \`名=dB;名=off\`：${mic}`)
+    } else if (snapshotTokens.has(mic)) {
+      warn(L, "mic", `用 snapshot 规则 \`${mic}\`（按 patch 路径挑 .nksn）`)
     } else if (profileNames) {
-      if (!profileNames.has(mic)) err(L, "mic", `profiles 里没有这个 profile：${mic}（有：${[...profileNames].join("/") || "（空）"}）`)
-      if (args.bool("show-profiles") && profileNames.has(mic)) warn(L, "mic", `用 profile ${mic}`)
+      if (!profileNames.has(mic)) {
+        err(
+          L,
+          "mic",
+          `profiles 里既没有 mic_profiles.${mic} 也没有 mic_snapshots.${mic}` +
+            `（有：${[...profileNames].join("/") || "（空）"}｜${[...snapshotTokens].join("/") || "（无 snapshot）"}）`,
+        )
+      }
     }
   }
 

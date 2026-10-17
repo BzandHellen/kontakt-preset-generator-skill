@@ -367,6 +367,75 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "apply_snapshot",
+        description:
+          "把一份 .nksn 套到 multi 上 —— **加密库（Berlin/CSS/8Dio/LASS）唯一能落地麦克风比例的通路**。\n" +
+          "用法一：对已有 .nkm 套（nkm= 或 multi=），产出新文件（默认 \"<名> (snap).nkm\"，绝不覆盖输入），" +
+          "slots=\"0,2\" 可只套部分槽；报告里会比对套之前/之后 header 参数有没有被 snapshot 动过。\n" +
+          "用法二：visual=true 摆对照槽（第 1 槽不套、其余套上）**不退出**，留着你在 Kontakt 里点开看 mixer。\n" +
+          "注意：snapshot 的比例不体现在 group 音量上（数值读不出来），且会连带承载该库 UI 的其它状态。",
+        input: {
+          type: "object",
+          properties: {
+            snapshot: { type: "string", description: ".nksn 绝对路径（必填）" },
+            nkm: { type: "string", description: "输入 .nkm" },
+            multi: { type: "string", description: "或给 multi 名去 Generated 找" },
+            slots: { type: "string", description: "只套这些槽，如 \"0,2\"；默认全部" },
+            out: { type: "string", description: "输出 .nkm 路径" },
+            outDir: { type: "string" },
+            force: { type: "boolean", description: "允许覆盖已存在的输出" },
+            visual: { type: "boolean", description: "摆对照槽，不退出，给人看 mixer" },
+            patch: { type: "array", items: { type: "string" }, description: "visual 模式要摆的 .nki；第 1 个是对照组" },
+            multiName: { type: "string", description: "visual 模式的 multi 名" },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          required: ["snapshot"],
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["snapshot", "nkm", "multi", "slots", "out", "exe", "timeout", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("out-dir", i.outDir), ...opt("multi", i.multiName))
+          args.push(...opt("patch", i.patch), ...opt("force", i.force), ...opt("visual", i.visual), ...opt("dry-run", i.dryRun))
+          return text(await run("apply-snapshot.mjs", args, 900_000, 120_000))
+        },
+      })
+
+      editor.add({
+        name: "learn_mic",
+        description:
+          "从一个**你已手调好**的乐器（.nki）学出各麦克风的 dB，输出可直接粘进 profiles.lua 的 " +
+          "`mic_profiles` 片段（只打印，不写回）。只对**未加密库**有意义 —— 加密库的 group 音量存不住，" +
+          "学出来是默认值，工具会明确报「学不出，走 snapshot」。",
+        input: {
+          type: "object",
+          properties: {
+            patch: { type: "array", items: { type: "string" }, description: "已调好的 .nki（可多个）" },
+            name: { type: "string", description: "输出 profile 名，默认从文件名推" },
+            mic: { type: "array", items: { type: "string" }, description: "只学这些麦克风名" },
+            keyword: { type: "array", items: { type: "string" }, description: "没有别名表时用的关键词" },
+            census: { type: "number", description: "报告里列多少 group 名，默认 12" },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["name", "census", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("patch", i.patch), ...opt("mic", i.mic), ...opt("keyword", i.keyword), ...opt("dry-run", i.dryRun))
+          return text(await run("learn-mic.mjs", args, 900_000, 120_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +

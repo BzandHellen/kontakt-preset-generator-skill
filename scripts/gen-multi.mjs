@@ -218,6 +218,11 @@ for (const m of plan.multis) {
         `   这是 Kontakt 关机阶段的问题，不影响产物；报告在 ${res.reportPath}。`,
     )
   }
+  const othersHits = res.reportText.split(/\r?\n/).filter((l) => /\(others\)/.test(l))
+  if (othersHits.length) {
+    console.log(`\n通配 (others) 的命中（清单里写了 others=…）：`)
+    for (const l of othersHits) console.log(`  ${l.trim()}`)
+  }
 
   const fail = slots.issues.length + micReal.length + res.fails
   failTotal += fail
