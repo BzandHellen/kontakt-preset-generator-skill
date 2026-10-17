@@ -24,7 +24,7 @@
 |---|---|
 | `SKILL.md` | 技能正文：已注册工具、Kontakt Lua 的核心事实与坑、写盘安全、标准工作流 |
 | `plugin/index.ts` | 把 `scripts/*.mjs` 注册成 `kontakt` 命名空间的 OpenCode 工具 |
-| `scripts/` | Node 脚本（`env`/`db-build`/`db-query`/`manifest-lint`/`profiles`/`reports`/`run-lua`/`gen-multi`/`inspect-multi`/`verify-multi`/`probe-library`/`apply-snapshot`/`learn-mic` + `lib`/`job`/`plan`/`compare`；`kontakt_lib.lua` 是 Lua 侧公共库） |
+| `scripts/` | Node 脚本（`env`/`db-build`/`db-query`/`manifest-lint`/`profiles`/`reports`/`run-lua`/`gen-multi`/`inspect-multi`/`verify-multi`/`probe-library`/`apply-snapshot`/`learn-mic`/`snapshot` + `lib`/`job`/`plan`/`compare`；`kontakt_lib.lua` 是 Lua 侧公共库） |
 | `templates/` | Lua 作业模板（`job_gen_multi` / `job_inspect_multi` / `job_verify_multi` / `job_probe_library` / `job_apply_snapshot` / `job_snapshot_visual` / `job_learn_mic`），配置由 Node 注入 |
 | `config/` | 本机配置：库扫描根（真文件 gitignore，只留 `.example.jsonc`） |
 | `data/` | 扫库生成的 patch 索引（可重建，不进 git） |

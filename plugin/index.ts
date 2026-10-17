@@ -436,6 +436,34 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "snapshot",
+        description:
+          "`.nksn` 只读体检（**不需要 Kontakt**）。实测：.nksn **不是加密的**，是明文参数容器 —— 参数名大部分可读。\n" +
+          "列出：可读参数名（引擎样式 / 语义词 / 疑似混淆的短 token）、关键词命中（默认查 ks/articulation/xfade/" +
+          "legato/mic/dyn…）、给两份以上时做名字集合差异。\n" +
+          "用途：判断一份 snapshot 里有没有带着技法/键位/xfade/mic 那些块，以及你的「库标准状态」有没有变。\n" +
+          "⚠ 只读：**绝不修改 snapshot**（改了会破坏 NI 的格式与校验）。值读不出来，别指望从里面读出「KS=C-2」。",
+        input: {
+          type: "object",
+          properties: {
+            file: { type: "array", items: { type: "string" }, description: ".nksn（可多个，2 个以上自动做差异）" },
+            find: { type: "string", description: "关键词，逗号分隔；默认查 ks/articulation/xfade/legato/mic/dyn…" },
+            limit: { type: "number", description: "每类列多少条，默认 60" },
+            json: { type: "boolean" },
+          },
+          required: ["file"],
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["find", "limit"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("file", i.file), ...opt("json", i.json))
+          return text(await run("snapshot.mjs", args, 120_000, 120_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +

@@ -37,6 +37,7 @@ description: >-
 | `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API（只读） |
 | `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**加密库的麦克风唯一通路**）；`visual=true` 摆对照槽不退出给人看 |
 | `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印可粘的 `mic_profiles` 片段（只对未加密库有意义） |
+| `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
 ## 核心事实（决定一切设计）
@@ -58,6 +59,13 @@ description: >-
    一个 multi 的内容唯一可读窗口是 Lua（`get_instrument_name` / `get_instrument_midi_channel`）。
 8. **VEP 侧的 Kontakt 参数面是空的**（4131 个参数只有 Disable/Bypass/#000..#511 全 0）→
    麦克风/库参数**不能从 VEP 侧读写**，必须在 Kontakt 侧解决。
+9. **`.nksn` 不是加密的**：是**明文参数容器**（熵 6.5–7.1，不是 8）。实测能读到
+   `ARTICULATION` / `legato` / `ks_mono_poly` / `_switch` / `xfade` / `_mic` / `_dyna` / `artic_name`
+   这类参数名，以及 `Blurred` / `Tremolo` / `Trills` / `Pizzicato` 这类技法名 ——
+   但**值在被混淆的段里，读不出来**，也**绝不能改**（会破坏 NI 的格式与校验）。
+   → 它只能用来「体检」（这份快照里有没有带技法/键位/xfade 那些块）和「两份对比」（标准状态有没有变）。
+   → 库 UI 上的开关（CSS 的 **KS 键位**、Berlin 单音的 **xfade→velocity**、CAPSULE mixer）**唯一落地手段**
+   仍是：人在 GUI 里调一次 → 存 snapshot → `apply_snapshot` 套到全库。**不能"口述 → 直接落地"**。
 
 ## 写盘与安全（硬约束）
 
@@ -85,9 +93,7 @@ description: >-
 5. （M2 起）`kontakt_gen_multi` 出 `.nkm` 并自动回读校验；`kontakt_reports` 看体检表。
 6. （M4 起）交 `vepro-api` 灌通道。
 
-## 麦克风的两条路（最重要的规范）
-
-| 库 | 怎么写 | 清单写法 | 能否自动 |
+## 麦克风的两条路（最重要的规范）| 库 | 怎么写 | 清单写法 | 能否自动 |
 |---|---|---|---|
 | **未加密**（Performance Samples、Aaron Venture、你自己的 `MSB *.nki` 样板） | 直接写 group 音量 | `mic = CLOSE=-6;others=off` 或 profile 名 | ✅ 全自动，且**能数值验证** |
 | **加密 / Player**（Berlin / CSS / 8Dio / LASS） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = berlin`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
