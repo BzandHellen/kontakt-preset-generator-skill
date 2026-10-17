@@ -88,9 +88,13 @@ description: >-
 
 ## 维护
 
-- 脚本是 **Node `.mjs`**（不是 PowerShell）：这层全是文本/JSON/进程编排，一种语言更省事，也不依赖 PATH 里的 `node`
-  （插件用 `process.execPath` 调）。姊妹 skill `vsl-synchron-player` 用的是 PowerShell。
+- 脚本是 **Node `.mjs`**（不是 PowerShell）：这层全是文本/JSON/进程编排，一种语言更省事。
+  姊妹 skill `vsl-synchron-player` 用的是 PowerShell。
+- ⚠️ **插件里 `process.execPath` 不是 node**：它是 OpenCode 自己那个 Bun 单文件（`opencode.exe`），
+  拿它当解释器只会得到一支 `opencode` CLI 的参数错误。所以 `plugin/index.ts` 显式找 node
+  （`$KONTAKT_NODE` > `C:\Program Files\nodejs\node.exe` > `where node` > `PATH`）。
 - 插件注册：`C:\Users\Administrator\.config\opencode\plugins\kontakt-preset-generator-skill`
-  → junction 到本目录的 `plugin\`。改了插件代码后 `opencode service restart`。
+  → junction 到本目录的 `plugin\`（`plugins/` 下的目录会被自动发现）。
+- 改了插件代码：`opencode reload` 即可（比重启服务轻，不用 `opencode service restart`）。
 - 细节与踩坑见工作区 `docs\Kontakt-Lua-发现与坑.md`；外部参考：Kontakt Lua API 官方手册
   `https://docs.native-instruments.com/ni-tech-manuals/kontakt-api-reference-manual/en/`

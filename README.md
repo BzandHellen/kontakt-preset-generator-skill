@@ -12,7 +12,7 @@
 | 技能入口 | `~/.config/opencode/skills/kontakt-preset-generator-skill`（junction → 本目录） |
 | 工具插件 | `~/.config/opencode/plugins/kontakt-preset-generator-skill`（junction → `plugin/`） |
 
-改了插件代码后 `opencode service restart`。
+改了插件代码后 `opencode reload`（比重启服务轻）。
 
 ## 它做什么
 

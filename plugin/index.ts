@@ -10,7 +10,7 @@
  * `plugins/` 下的插件会被自动发现。改了插件代码后 `opencode service restart`。
  */
 import { Plugin } from "@opencode/plugin"
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -29,6 +29,27 @@ const SKILL = (() => {
 
 const SCRIPTS = join(SKILL, "scripts")
 
+// 找真正的 node。
+// 注意：插件里 `process.execPath` **不是** node —— 它是 OpenCode 自己那个 Bun 单文件
+// （opencode.exe），拿它当解释器只会得到一支 opencode CLI 的参数错误。所以这里显式找。
+const NODE = (() => {
+  const cands = [
+    process.env.KONTAKT_NODE,
+    "C:\\Program Files\\nodejs\\node.exe",
+    process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs\\nodejs\\node.exe") : "",
+  ].filter((c): c is string => !!c)
+  for (const c of cands) if (existsSync(c)) return c
+  try {
+    const out = execFileSync("where.exe", ["node"], { encoding: "utf8", windowsHide: true })
+    const first = out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find(Boolean)
+    if (first) return first
+  } catch {}
+  return "node" // 交给 PATH
+})()
+
 const text = (s: unknown) => ({ content: String(s ?? "") })
 
 // 脚本用 --key=value 收参数；数组 → 重复出现。
@@ -42,7 +63,7 @@ function opt(key: string, value: unknown): string[] {
 function run(script: string, args: string[], timeoutMs = 180_000, cap = 60_000): Promise<string> {
   return new Promise((resolve) => {
     execFile(
-      process.execPath, // 用跑插件的这个 Node，避免依赖 PATH 里的 node
+      NODE,
       [join(SCRIPTS, script), ...args],
       { maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs, windowsHide: true },
       (err, stdout, stderr) => {
