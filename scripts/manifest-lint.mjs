@@ -26,7 +26,8 @@ if (!existsSync(manifest)) {
 }
 
 const KNOWN = ["multi", "slot", "patch", "name", "midi", "port", "out", "vol", "pan", "mic", "keysw", "snapshot", "note"]
-const REQUIRED = ["multi", "patch", "name"]
+// name 不是必填：**留空 = 保持 patch 原名**（用户核对时要能看到原始 patch 名）
+const REQUIRED = ["multi", "patch"]
 const SECTIONS = ["STR", "BRS", "WW", "PERC", "ETH", "CHO"]
 
 const { header, rows } = parseTsv(readFileSync(manifest, "utf8"))
@@ -86,8 +87,8 @@ for (const r of rows) {
     seenPatch.set(multi, set)
   }
 
-  if (!name) err(L, "name", "空")
-  else {
+  // name 留空 = 保持 patch 原名（不校验、不提示）
+  if (name) {
     const set = seenName.get(multi) ?? new Set()
     if (set.has(name)) warn(L, "name", `同一个 multi 里槽名重复：${name}`)
     set.add(name)
