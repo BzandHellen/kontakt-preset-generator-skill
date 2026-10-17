@@ -1,0 +1,32 @@
+// Kontakt 库扫描根 —— db_build 的输入。
+//
+// 这是**参考形状**，工具不读这个文件。
+// 要用就复制成同目录的 config/libraries.json 再按本机情况改（那个文件不进 git）。
+//
+// 解析顺序：工具参数里的 roots > config/libraries.json > 都没有时只探测候选并回给用户确认
+// （永远不静默扫全盘）。
+{
+  // 按顺序扫；同一个库出现在多个根下时，先出现的胜出
+  "scan_roots": [
+    { "path": "E:\\Kontakt Library" },
+    { "path": "F:\\Kontakt Library" },
+    { "path": "G:\\Kontakt Library" },
+    { "path": "C:\\VEPRO\\Channel Sets\\NKI", "label": "Channel Sets" }
+  ],
+
+  // 完整路径的大小写不敏感子串匹配，命中任一就跳过
+  // （采样库盘上还有独立音色/素材目录，默认不碰）
+  "exclude": ["Loop & SFX", "Indepenent Library", "\\_Trash\\", "\\backup\\"],
+
+  // 索引哪些扩展名
+  "extensions": [".nki", ".nkm"],
+
+  // 每个 root 下的最大递归深度；0 = 不限（Kontakt 库通常 3–5 层）
+  "max_depth": 0,
+
+  // 库 token（清单命名用，见工作区 README §3）。没写的由库目录名自动推导。
+  "library_tokens": {
+    "Orchestral Tools - Berlin Strings": "Berlin",
+    "Cinematic Studio Strings": "CSS"
+  }
+}

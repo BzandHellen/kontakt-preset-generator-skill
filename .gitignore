@@ -2,6 +2,9 @@
 data/*
 !data/README.md
 
+# machine-specific config (library scan roots) — local only
+config/libraries.json
+
 # personal habits / preferences — local only
 references/user-habits.md
 
