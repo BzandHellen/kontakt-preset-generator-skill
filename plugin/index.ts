@@ -386,7 +386,8 @@ export default Plugin.define({
             out: { type: "string", description: "输出 .nkm 路径" },
             outDir: { type: "string" },
             force: { type: "boolean", description: "允许覆盖已存在的输出" },
-            visual: { type: "boolean", description: "摆对照槽，不退出，给人看 mixer" },
+            visual: { type: "boolean", description: "摆对照槽（配合 pair/patch/save 用）" },
+            save: { type: "string", description: "visual 模式：把机架存成这个 .nkm 给人打开（存完退出；不给就留着机架不退出）" },
             patch: { type: "array", items: { type: "string" }, description: "visual 模式要摆的 .nki；第 1 个是对照组" },
             multiName: { type: "string", description: "visual 模式的 multi 名" },
             pair: {
@@ -404,7 +405,7 @@ export default Plugin.define({
         options: { namespace: "kontakt", codemode: true },
         execute: async (input) => {
           const i = input as Record<string, unknown>
-          const args = ["snapshot", "nkm", "multi", "slots", "out", "exe", "timeout", "workspace"].flatMap((k) => opt(k, i[k]))
+          const args = ["snapshot", "nkm", "multi", "slots", "out", "exe", "timeout", "workspace", "save", "save-mode"].flatMap((k) => opt(k, i[k]))
           args.push(...opt("out-dir", i.outDir), ...opt("multi", i.multiName))
           args.push(...opt("patch", i.patch), ...opt("pair", i.pair), ...opt("force", i.force), ...opt("visual", i.visual), ...opt("dry-run", i.dryRun))
           return text(await run("apply-snapshot.mjs", args, 900_000, 120_000))

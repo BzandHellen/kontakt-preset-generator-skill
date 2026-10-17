@@ -78,9 +78,14 @@ if (args.bool("visual")) {
   }
 
   const report = join(repDir, `visual-${stamp}.txt`).replace(/\\/g, "/")
-  const rendered = renderJob("job_snapshot_visual.lua", { multi: args.get("multi", "SNAPSHOT TEST"), report, entries }, { args, slug: `visual-${stamp}` })
+  const savePath = args.get("save", "") ? resolve(args.get("save")) : null
+  const rendered = renderJob(
+    "job_snapshot_visual.lua",
+    { multi: args.get("multi", "SNAPSHOT TEST"), report, entries, save: savePath, save_mode: args.get("save-mode", "patch") },
+    { args, slug: `visual-${stamp}` },
+  )
 
-  console.log(bullet("snapshot 对照（会留着不退出，给你看 mixer）"))
+  console.log(bullet("snapshot 对照"))
   console.log(
     tableText(
       ["槽", "装上什么", "套的快照"],
@@ -88,6 +93,8 @@ if (args.bool("visual")) {
     ),
   )
   console.log(`作业：${rendered.file}`)
+  if (savePath) console.log(`产出：${savePath}（存完就退出，你直接打开它看）`)
+  else console.log(`产出：不落盘，机架留着不退出（要落盘加 --save=<路径>）`)
   const pf = preflight(args)
   if (pf.notes.length) console.log(`\n注意：${pf.notes.join("；")}`)
   if (args.bool("dry-run")) {
@@ -98,10 +105,14 @@ if (args.bool("visual")) {
     console.error(`[环境] ${pf.problems.join("；")}`)
     process.exit(EXIT.ENV)
   }
-  // 故意不退出：等它写出报告就够（脚本自己写报告后留着机架）
+  // 有 --save 时脚本存完就自己退出；没有才需要等它超时（它故意留着机架）
   const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir })
   console.log(`\n${res.reportPath ? `报告：${res.reportPath}` : "（报告没写出来）"}`)
-  console.log(res.timedOut ? `\nKontakt 还在开着（pid ${res.pid} 没杀）—— 去点开这 ${entries.length} 个槽看 mixer，看完自己关。` : `\n退出：code ${res.exitCode}`)
+  if (savePath) {
+    console.log(existsSync(savePath) ? `\n✅ 已写出可打开的 multi：${savePath}\n   在你的 Kontakt 里打开它，逐个点槽看。` : `\n⛔ 没写出 ${savePath}`)
+  } else {
+    console.log(res.timedOut ? `\nKontakt 还在开着（pid ${res.pid} 没杀）—— 去点开这 ${entries.length} 个槽看，看完自己关。` : `\n退出：code ${res.exitCode}`)
+  }
   const rows = parseMachineBlock(res.reportText, "LIBS") ?? []
   if (rows.length) {
     console.log(`\n---- 对照表`)

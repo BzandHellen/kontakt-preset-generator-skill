@@ -44,5 +44,25 @@ K.log("期待：套了 snapshot 的槽显示该 snapshot 的比例（跨 patch �
 
 K.log("\n==== end ====")
 K.write_report(JOB.report)
--- 故意不 os.exit：机架留着给人看。看完了自己关 Kontakt。
+
+-- --save：把机架存成一个可打开的 .nkm 给人看
+-- （agent 启动的 Kontakt 没有窗口，"留个实例"对人没用 → 直接给文件最可靠）
+if JOB.save and JOB.save ~= "" then
+  K.log("\n---- 存成可打开的 multi ----")
+  local okSave = K.try("save_multi", Kontakt.save_multi, JOB.save, { mode = JOB.save_mode or "patch" })
+  if okSave then
+    local f = io.open(JOB.save, "r")
+    if f then
+      local n = f:seek("end")
+      f:close()
+      K.log("[ OK ] 已写出 %s（%d 字节）", JOB.save, n)
+    else
+      K.log("[FAIL] 没写出文件：%s", JOB.save)
+    end
+  end
+  K.write_report(JOB.report)
+  os.exit(0)
+end
+
+-- 没给 --save：故意不退出，机架留着给人看。看完了自己关 Kontakt。
 print("（不自动退出：机架留着给人看）")
