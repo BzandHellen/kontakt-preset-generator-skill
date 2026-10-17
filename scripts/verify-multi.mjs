@@ -17,7 +17,7 @@ import {
   workspaceDir,
 } from "./lib.mjs"
 import { renderJob } from "./job.mjs"
-import { expectPaths, loadProfiles, mergedAliases } from "./plan.mjs"
+import { expectPaths, loadProfiles, mergedAliases, planManifest } from "./plan.mjs"
 import { classifyMicIssues, compareMics, compareSlots, jobCompleted } from "./compare.mjs"
 
 const args = parseArgs()
@@ -53,6 +53,11 @@ if (!slotCsv) {
 }
 const expectRows = slotCsv && existsSync(slotCsv) ? readCsv(slotCsv) : null
 const micExpect = micCsv && existsSync(micCsv) ? readCsv(micCsv) : null
+// 期望值里记了来源清单；现在用的清单/没给清单时提醒一句
+const expectSrc = expectRows?.[0]?.src ?? ""
+if (expectSrc && args.has("manifest") && expectSrc !== args.get("manifest")) {
+  console.log(`\n⚠ 期望值来自另一份清单：${expectSrc}\n   现在给的是：${args.get("manifest")} —— 可能对不上，自己确认。`)
+}
 const micNames = args.getAll("mic").filter(Boolean)
 const micNamesFinal = micNames.length
   ? micNames.map((s) => s.toUpperCase())
@@ -67,6 +72,23 @@ const job = {
   mic_names: micNamesFinal,
   mic_aliases: mergedAliases(loadProfiles(args).value),
 }
+
+// --manifest：借清单拿到每个槽的 patch 路径，之后在空槽里"干净装载"一遍读基线
+// （库里原来的默认 group 音量各库不同，没有基线就没法判"是库复位还是我们真写错了"）
+const baselines = []
+if (args.has("manifest")) {
+  try {
+    const plan = planManifest(args)
+    for (const m of plan.multis) {
+      if (m.multi !== multiName && plan.multis.length > 1) continue
+      for (const s of m.slots) baselines.push({ slot: s.slot, path: s.path })
+    }
+  } catch (e) {
+    console.warn(`[警告] 读了清单但没成功（${e.message}）—— 退化为"无法判定复位"`)
+  }
+}
+job.baselines = baselines
+if (baselines.length) console.log(`基线：会给 ${baselines.length} 个槽各干净装载一遍读默认值`)
 const rendered = renderJob("job_verify_multi.lua", job, { args, slug: `verify-${multiName}` })
 
 console.log(bullet("回读 multi"))
@@ -114,6 +136,18 @@ if (rows.length) {
 }
 
 const micActual = parseMachineBlock(res.reportText, "MICS") ?? []
+// 有基线表就把基线并进 MICS 行里，这样能判"库复位"而不只是"不一致"
+const baseRows = parseMachineBlock(res.reportText, "BASELINES") ?? []
+if (baseRows.length) {
+  const byKey = new Map(baseRows.map((r) => [`${r.slot}|${String(r.mic).toUpperCase()}`, r]))
+  for (const r of micActual) {
+    const b = byKey.get(`${r.slot}|${String(r.mic).toUpperCase()}`)
+    if (b) {
+      r.base_min = b.base_min
+      r.base_max = b.base_max
+    }
+  }
+}
 if (micActual.length) {
   console.log(`\n---- 麦克风读数`)
   console.log(
@@ -138,7 +172,7 @@ if (expectRows) {
 
   if (micExpect && micExpect.length) {
     const cm = compareMics(micExpect, micActual)
-    const { real, reset, missing } = classifyMicIssues(cm.issues, micActual, { noBaseline: true })
+    const { real, reset, missing } = classifyMicIssues(cm.issues, micActual, { noBaseline: !baseRows.length })
     console.log(`\n---- 麦克风比对（${cm.checks.length} 项：PASS ${cm.checks.filter((c) => c.ok).length} / FAIL ${real.length}）`)
     if (real.length) {
       console.log(
@@ -148,9 +182,12 @@ if (expectRows) {
     } else if (cm.checks.length) console.log("全部一致。")
     if (reset.length) {
       console.log(
-        `\n⚠ ${reset.length} 条麦克风与期望不一致（槽 ${[...new Set(reset.map((i) => i.slot))].join("、")}）。\n` +
-          `   verify 是读已存盘的 .nkm，**拿不到"写之前的基线"**，所以没法判定是「库复位」还是「真不一致」——\n` +
-          `   这里只作提醒。要判定请用 gen_multi（它读了写之前的基线，能区分复位与真失败）。`,
+        baseRows.length
+          ? `\n⚠ ${reset.length} 条回读值 == 库里的默认基线（槽 ${[...new Set(reset.map((i) => i.slot))].join("、")}）` +
+              `→ 是**库把它复位了**，不是我们写错。这类库的 group 音量存不住，只能靠 snapshot。`
+          : `\n⚠ ${reset.length} 条麦克风与期望不一致（槽 ${[...new Set(reset.map((i) => i.slot))].join("、")}）。\n` +
+              `   没给 --manifest，读不到"库里默认值"这条基线，所以没法判定是「库复位」还是「真不一致」——这里只作提醒。\n` +
+              `   要判定请加 --manifest=<清单>，或用 gen_multi（它写之前先读一遍基线）。`,
       )
     }
     if (missing.length) {

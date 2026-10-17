@@ -34,9 +34,9 @@ description: >-
 | `kontakt_gen_multi` | **是** | 清单 → `.nkm`（A1–A6），存盘后重载回读并与期望值自动比对 |
 | `kontakt_inspect_multi` | **是** | 侦察 `.nkm`：槽位参数、库是否加密、group 名普查、麦克风读数（只读） |
 | `kontakt_verify_multi` | **是** | 回读已有 `.nkm` 并与 `Generated\_expect\<multi>.csv` 比对 |
-| `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API（只读） |
+| `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API；**`structure=true` 探技法/力度层是脚本还是原生**（只读） |
 | `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**加密库的麦克风唯一通路**）；`visual=true` 摆对照槽不退出给人看 |
-| `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印可粘的 `mic_profiles` 片段（只对未加密库有意义） |
+| `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印片段；`write=true` 直接写回 `profiles.lua`（先备份 `.bak`） |
 | `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
@@ -66,6 +66,16 @@ description: >-
    → 它只能用来「体检」（这份快照里有没有带技法/键位/xfade 那些块）和「两份对比」（标准状态有没有变）。
    → 库 UI 上的开关（CSS 的 **KS 键位**、Berlin 单音的 **xfade→velocity**、CAPSULE mixer）**唯一落地手段**
    仍是：人在 GUI 里调一次 → 存 snapshot → `apply_snapshot` 套到全库。**不能"口述 → 直接落地"**。
+10. **Kontakt 原生的 group start 条件可以程序化读写，而且存得住**（未加密库实测）：
+   `set_group_start_options(idx, group, {[n] = { mode = "controller", controller = 110, cc_min = 1, cc_max = 30, next = "and" }})`
+   → 写进去 → `save_multi` → `load_multi` → 回读**一致**。条件类型 `controller` / **`key`** /
+   `random` / `round_robin` / `slice_trigger`，组合符 `and` / `and_not` / `or`。
+   → 所以「哪个 CC / 哪个键触发哪些 group」这一层**是能脚本化的**——但只对"用原生 start 条件实现切换"的库
+   （实测 CSS 是：609 个 group 带 CC110/111 区间条件；Berlin / MSB / Pacific 都没有）。
+11. **Lua 的编译/运行错误写在 stderr**（`[kontakt.scripting] [error] <文件>:<行>: …`）——不是静默的。
+   `kontakt_run_lua` 会把这类错误单独列出来。**没有报告 + stderr 里有 scripting error = 脚本没跑起来**。
+12. Kontakt 退出时那一串 `bmemory.cpp DoVMUnLock: VirtualUnlock(...) errno = 158` 就是
+   `0xC0000005` 的来源（关机阶段），**与作业成败无关**。
 
 ## 写盘与安全（硬约束）
 
@@ -103,12 +113,19 @@ description: >-
 - 这类库的比例**不落在 group 音量上**，数值读不出来 → 只能人眼确认（`apply_snapshot --visual` 摆对照）。
 - 判「库复位」要看**写之前的基线**：各库基线不同（MSB 0.037 / Berlin 0.001627），不能拿「值很小」当判据。
 
+**一种例外，能直接设**：如果库的切换是**原生 group start 条件**（CSS 的 CC110/111 区间就是），
+那 `set_group_start_options` 能程序化改、而且存得住（未加密库实测）。
+先 `kontakt_probe_library(structure: true)` 看目标是哪一类。
+
 ## 进度
 
 - **M1 已完成**（harness 工具接口验过）：`env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua`。
 - **M2 已完成**（真跑 Kontakt 验过）：`gen_multi` / `inspect_multi` / `verify_multi` / `probe_library`。
-- **M3 已完成**（真跑验过）：`apply_snapshot`（含 `--visual` 对照）/ `learn_mic`；
+- **M3 已完成**（真跑验过）：`apply_snapshot`（含 `--visual` 对照）/ `learn_mic`（含 `--write` 写回 profiles）；
   未加密库正向验证成功（`MSB Horn1` 的 `CLOSE=-6` 存盘重载后仍是 −6，`others=off` 关掉 336 个 group）。
+- **M3+ 已完成**：`snapshot`（`.nksn` 只读体检）、`probe_library --structure`（技法/力度层是脚本还是原生）、
+  `verify_multi` 基线判定（能从清单读库里默认值，区分「库复位」与「真不一致」）；
+  并实测**原生 start 条件可写可持久**（见核心事实第 10 条）。
 - 新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
 - M4：`to_vepro`（可选）。
 

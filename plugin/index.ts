@@ -313,6 +313,7 @@ export default Plugin.define({
             nkm: { type: "string" },
             multi: { type: "string", description: "或给 multi 名去 Generated 找" },
             expect: { type: "string", description: "期望值 CSV（默认按 multi 名找）" },
+            manifest: { type: "string", description: "清单路径：给了就能读「库里默认值」当基线，判定「是库复位还是真不一致」" },
             micExpect: { type: "string" },
             mic: { type: "array", items: { type: "string" } },
             dryRun: { type: "boolean" },
@@ -325,7 +326,7 @@ export default Plugin.define({
         options: { namespace: "kontakt", codemode: true },
         execute: async (input) => {
           const i = input as Record<string, unknown>
-          const args = ["nkm", "multi", "expect", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          const args = ["nkm", "multi", "expect", "manifest", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
           args.push(...opt("mic-expect", i.micExpect), ...opt("mic", i.mic), ...opt("dry-run", i.dryRun))
           return text(await run("verify-multi.mjs", args, 900_000, 120_000))
         },
@@ -348,6 +349,7 @@ export default Plugin.define({
             census: { type: "number", description: "列多少 group 名，默认 20" },
             words: { type: "number", description: "列多少词频候选，默认 25" },
             api: { type: "boolean", description: "只列 API" },
+            structure: { type: "boolean", description: "探结构：技法/力度层是脚本还是 Kontakt 原生（含 group start 条件与 zone 力度分布）" },
             check: { type: "array", items: { type: "string" }, description: "api 模式下重点确认的 API 名" },
             dryRun: { type: "boolean" },
             timeout: { type: "number" },
@@ -361,7 +363,7 @@ export default Plugin.define({
           const i = input as Record<string, unknown>
           const args = ["library", "limit", "census", "words", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
           args.push(...opt("patch", i.patch), ...opt("check", i.check))
-          args.push(...opt("spread", i.spread), ...opt("api", i.api), ...opt("dry-run", i.dryRun))
+          args.push(...opt("spread", i.spread), ...opt("api", i.api), ...opt("structure", i.structure), ...opt("dry-run", i.dryRun))
           return text(await run("probe-library.mjs", args, 900_000, 150_000))
         },
       })
@@ -416,6 +418,9 @@ export default Plugin.define({
           properties: {
             patch: { type: "array", items: { type: "string" }, description: "已调好的 .nki（可多个）" },
             name: { type: "string", description: "输出 profile 名，默认从文件名推" },
+            profiles: { type: "string", description: "profiles.lua 路径（写回时用），默认工作区那份" },
+            write: { type: "boolean", description: "把学到的值写回 profiles.lua 的 mic_profiles（先备份 .bak）" },
+            force: { type: "boolean", description: "写回时允许覆盖同名 profile" },
             mic: { type: "array", items: { type: "string" }, description: "只学这些麦克风名" },
             keyword: { type: "array", items: { type: "string" }, description: "没有别名表时用的关键词" },
             census: { type: "number", description: "报告里列多少 group 名，默认 12" },
@@ -429,8 +434,9 @@ export default Plugin.define({
         options: { namespace: "kontakt", codemode: true },
         execute: async (input) => {
           const i = input as Record<string, unknown>
-          const args = ["name", "census", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
-          args.push(...opt("patch", i.patch), ...opt("mic", i.mic), ...opt("keyword", i.keyword), ...opt("dry-run", i.dryRun))
+          const args = ["name", "census", "timeout", "exe", "workspace", "profiles"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("patch", i.patch), ...opt("mic", i.mic), ...opt("keyword", i.keyword))
+          args.push(...opt("write", i.write), ...opt("force", i.force), ...opt("dry-run", i.dryRun))
           return text(await run("learn-mic.mjs", args, 900_000, 120_000))
         },
       })

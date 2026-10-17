@@ -3,7 +3,7 @@
 // 输出可直接粘进 profiles.lua 的 Lua 片段。**不写回**（改的是你的数据文件，等你点头再说）。
 // 只对未加密库有意义：加密库的 group 音量存不住，学到的是默认值。
 
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import {
   EXIT,
@@ -14,7 +14,6 @@ import {
   preflight,
   reportsDir,
   tableText,
-  workspaceDir,
 } from "./lib.mjs"
 import { renderJob } from "./job.mjs"
 import { loadProfiles, mergedAliases } from "./plan.mjs"
@@ -123,14 +122,83 @@ if (usable.length) {
   console.log(`    ${usable.map((r) => `${r.mic} = ${fmt(r.min)}`).join(", ")}`)
   console.log(`  },`)
 }
-if (vary.length) {
-  console.log(`\n⚠ 这些麦克风在乐器里**不是一个值**（多个 group 音量不同），没进片段，需要人工定：`)
-  console.log(tableText(["麦克风", "group 数", "min", "max"], vary.map((r) => ({ 麦克风: r.mic, "group 数": r.n, min: r.min, max: r.max }))))
-}
 
-console.log(`\n（没有写回 profiles.lua —— 你自己粘。要自动写回等 profiles 单一来源定了再加。）`)
+// ---------------------------------------------------------------- 写回（可选）
+if (args.bool("write") && usable.length) {
+  if (!prof.ok) {
+    console.log(`\n[写回失败] 读不到 profiles：${prof.path}`)
+  } else {
+    const line = `    ${name} = { ${usable.map((r) => `${r.mic} = ${fmt(r.min)}`).join(", ")} },`
+    const r = writeProfile(prof.path, name, line, args.bool("force"))
+    console.log(`\n---- 写回 profiles.lua ----`)
+    console.log(r.ok ? `  ✅ ${r.message}` : `  ⛔ ${r.message}`)
+  }
+} else if (!args.bool("write")) {
+  console.log(`\n（没有写回 profiles.lua —— 你自己粘。要自动写回加 --write，会先备份 .bak。）`)
+}
 console.log(`\n结论：${protectedLibs.length ? "加密库 —— 学不出来，走 snapshot" : usable.length ? `学出 ${usable.length} 个值` : "没学到可用值"}`)
 process.exit(res.fails ? EXIT.ISSUES : EXIT.OK)
+
+// ---------------------------------------------------------------- 往 profiles.lua 的 mic_profiles 里插/换一条
+// 保守做法：定位 `mic_profiles` 后的第一个 `{`，用括号计数找到配对的 `}`，
+// 在这之前插入（若同名条目已存在则替换那一行）。先写 .bak。
+function writeProfile(path, profileName, line, force) {
+  const text = readFileSync(path, "utf8")
+  const at = text.indexOf("mic_profiles")
+  if (at < 0) return { ok: false, message: `profiles.lua 里找不到 mic_profiles（${path}）` }
+  const open = text.indexOf("{", at)
+  if (open < 0) return { ok: false, message: "找不到 mic_profiles 的 { " }
+
+  // 括号计数（跳过字符串与注释）
+  let depth = 0
+  let end = -1
+  let inStr = null
+  for (let i = open; i < text.length; i++) {
+    const c = text[i]
+    if (inStr) {
+      if (c === "\\") i++
+      else if (c === inStr) inStr = null
+      continue
+    }
+    if (c === '"' || c === "'") {
+      inStr = c
+      continue
+    }
+    if (c === "-" && text[i + 1] === "-") {
+      const nl = text.indexOf("\n", i)
+      i = nl < 0 ? text.length : nl
+      continue
+    }
+    if (c === "{") depth++
+    else if (c === "}") {
+      depth--
+      if (depth === 0) {
+        end = i
+        break
+      }
+    }
+  }
+  if (end < 0) return { ok: false, message: "mic_profiles 的括号没配对" }
+
+  const body = text.slice(open + 1, end)
+  const existing = new RegExp(`^[ \\t]*${profileName}[ \\t]*=.*$`, "m")
+  let next
+  if (existing.test(body)) {
+    if (!force) return { ok: false, message: `mic_profiles 里已经有 ${profileName} 了（要覆盖加 --force）` }
+    next = text.slice(0, open + 1) + body.replace(existing, line) + text.slice(end)
+  } else {
+    // 插在收尾之前：保留原有的缩进风格
+    const trimmed = body.replace(/[ \t]+\n?$/, "")
+    next = text.slice(0, open + 1) + trimmed + "\n" + line + "\n" + text.slice(end)
+  }
+
+  writeFileSync(`${path}.bak`, text, "utf8")
+  writeFileSync(path, next, "utf8")
+  return {
+    ok: true,
+    message: `${existing.test(body) ? "替换" : "插入"} mic_profiles.${profileName}；原文件已备份到 ${path}.bak`,
+  }
+}
 
 function stampText() {
   const d = new Date()

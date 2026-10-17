@@ -3,9 +3,9 @@
 // 这是 gen 与 verify 共用的那一步：把 defaults / pan_by_section / mic profile 全部落成具体值，
 // 顺便产出「期望值」（存成 CSV，给 verify_multi 用来比对）。
 
-import { existsSync, readFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { EXIT, UsageError, manifestPath, noteToMidi, parseLuaFile, parseTsv, profilesPath, writeCsv, workspaceDir } from "./lib.mjs"
+import { EXIT, UsageError, manifestPath, noteToMidi, parseLuaFile, parseTsv, profilesPath, readCsv, writeCsv, workspaceDir } from "./lib.mjs"
 
 export const SECTIONS = ["STR", "BRS", "WW", "PERC", "ETH", "CHO"]
 const PORTS = { A: 0, B: 1, C: 2, D: 3 }
@@ -220,8 +220,9 @@ export function planManifest(args) {
 }
 
 // 期望值 CSV：给 verify_multi 比对用（空 = 不检查）
-export const EXPECT_COLS = ["slot", "name", "midi", "out", "vol", "pan", "keysw", "kmin", "kmax", "vmin", "vmax", "trans"]
-export const MIC_COLS = ["slot", "mic", "expect"]
+// src 列记来源清单 —— multi 名相同但清单不同时，能发现"期望值被另一份清单覆盖了"
+export const EXPECT_COLS = ["src", "slot", "name", "midi", "out", "vol", "pan", "keysw", "kmin", "kmax", "vmin", "vmax", "trans"]
+export const MIC_COLS = ["src", "slot", "mic", "expect"]
 
 export function expectPaths(args, multi) {
   const dir = join(workspaceDir(args), "Generated", "_expect")
@@ -231,7 +232,12 @@ export function expectPaths(args, multi) {
 
 export function writeExpect(args, m) {
   const { slotCsv, micCsv } = expectPaths(args, m.multi)
+  const src = args.get("manifest") || ""
+  const existing = existsSync(slotCsv) ? readCsv(slotCsv)[0] : null
+  const clash = existing && existing.src && src && existing.src !== src
+
   const slotRows = m.slots.map((s) => ({
+    src,
     slot: s.slot,
     name: s.name,
     midi: s.midi,
@@ -252,11 +258,11 @@ export function writeExpect(args, m) {
     for (const [k, v] of Object.entries(s.mic.spec ?? {})) {
       // others 是通配（"其余全关"），不是麦克风名 —— 不进期望表，它的命中数在报告里
       if (k.toLowerCase() === "others") continue
-      micRows.push({ slot: s.slot, mic: k.toUpperCase(), expect: v === "off" ? "-inf" : v })
+      micRows.push({ src, slot: s.slot, mic: k.toUpperCase(), expect: v === "off" ? "-inf" : v })
     }
   }
   writeCsv(micCsv, MIC_COLS, micRows)
-  return { slotCsv, micCsv }
+  return { slotCsv, micCsv, clash: clash ? existing.src : null }
 }
 
 export { EXIT }

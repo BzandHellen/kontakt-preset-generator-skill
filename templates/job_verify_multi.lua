@@ -45,6 +45,34 @@ table.sort(mics, function(a, b)
 end)
 for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max" }, mics, "MICS")) do K.log(line) end
 
+-- 基线：在空槽里"干净装载"同一 patch，读它没被动过的 group 音量
+-- （用来判"回读值 == 库里默认值" → 库把我们的写入复位了，不是我们写错）
+local baserows = {}
+if JOB.baselines and #JOB.baselines > 0 then
+  local probeSlot = 40
+  for _, b in ipairs(JOB.baselines) do
+    if probeSlot > 63 then
+      K.log("[WARN] 探测槽用完了（40–63），后面的基线没装：%s", tostring(b.path))
+    else
+      local o, bi = pcall(Kontakt.load_instrument, b.path, probeSlot * 128)
+      if o and type(bi) == "number" then
+        local lv = K.mic_levels(bi, JOB.mic_names, JOB.mic_aliases)
+        for _, k in ipairs(JOB.mic_names) do
+          local a = lv[K.upper(k)]
+          if a then
+            baserows[#baserows + 1] = { slot = b.slot, mic = K.upper(k), base_min = a.min, base_max = a.max }
+          end
+        end
+        pcall(Kontakt.remove_instrument, bi)
+        probeSlot = probeSlot + 1
+      else
+        K.log("[WARN] 基线装载失败：%s", tostring(b.path))
+      end
+    end
+  end
+end
+for _, line in ipairs(K.machine_block({ "slot", "mic", "base_min", "base_max" }, baserows, "BASELINES")) do K.log(line) end
+
 K.log("\n==== end ====")
 K.write_report(JOB.report)
 os.exit(0)

@@ -26,7 +26,8 @@ export function compareSlots(expectRows, actualRows) {
       continue
     }
     for (const [field, expected] of Object.entries(e)) {
-      if (field === "slot") continue
+      // slot 是键；src 只是"期望值来自哪份清单"的标注 —— 都不是要校验的字段
+      if (field === "slot" || field === "src") continue
       if (expected === "" || expected === null || expected === undefined) continue
       const actual = a[field] ?? ""
       let ok

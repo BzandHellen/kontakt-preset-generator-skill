@@ -120,6 +120,12 @@ for (const m of plan.multis) {
 
   const rendered = renderJob("job_gen_multi.lua", job, { args, slug: `gen-${m.multi}` })
   const exp = writeExpect(args, m)
+  if (exp.clash) {
+    console.log(
+      `\n⚠ 期望值文件原本记的是**另一份清单**：${exp.clash}\n` +
+        `   这次已用当前清单覆盖（${exp.slotCsv}）。multi 名相同、清单不同时会互相覆盖，注意别搞混。`,
+    )
+  }
 
   console.log(`\n${"=".repeat(72)}`)
   console.log(`作业：${rendered.file}`)

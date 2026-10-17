@@ -86,6 +86,16 @@ if (res.stderr.trim()) {
   console.log(res.stderr.trim().split("\n").slice(-40).join("\n"))
 }
 
+// Kontakt 把 Lua 的编译/运行错误写进 stderr —— 这是最容易漏掉的一条通道
+const luaErrors = res.stderr
+  .split(/\r?\n/)
+  .filter((l) => /\[kontakt\.scripting\]\s*\[error\]/.test(l) || /^\S+\.lua:\d+:/.test(l.trim()))
+if (luaErrors.length) {
+  console.log(bullet("⛔ Lua 报错（编译或运行失败）"))
+  for (const l of luaErrors) console.log(`  ${l.trim()}`)
+  console.log(`\n（脚本没能跑到写报告那一步。改完再跑。）`)
+}
+
 console.log(`\n结果：${res.timedOut ? "未退出（结果未知）" : res.fails ? `${res.fails} 个 FAIL` : "没看到 FAIL"}`)
 if (res.reportPath) console.log(`报告：${res.reportPath}`)
 
