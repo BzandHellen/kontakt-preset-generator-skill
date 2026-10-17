@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { dirname, extname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 
 // ---------------------------------------------------------------- 退出码
 export const EXIT = {
@@ -446,4 +446,128 @@ export function listKontaktProcesses() {
     return []
   }
 }
+
+// ---------------------------------------------------------------- 启动 Kontakt 跑一个 Lua 作业
+// 约定（见 SKILL.md）：一个 Lua 脚本 = 一次进程；结果靠「报告文件」而不是 stdout。
+// 报告定位：显式给路径就用它；否则盯 reportsDir 里新增/更新的 .txt，取最新的那份。
+// 超时**不 kill** —— 有些脚本故意留着机架给人看。
+export async function launchKontakt({ exe, script, timeoutS = 180, explicitReport = null, reportsDirPath = null }) {
+  const snapshot = () => {
+    const m = new Map()
+    if (!reportsDirPath || !existsSync(reportsDirPath)) return m
+    for (const f of readdirSync(reportsDirPath)) {
+      if (!f.toLowerCase().endsWith(".txt")) continue
+      const p = join(reportsDirPath, f)
+      const st = fileInfo(p)
+      if (st) m.set(p, st.mtimeMs)
+    }
+    return m
+  }
+
+  const before = snapshot()
+  const started = Date.now()
+  const child = spawn(exe, [script], { stdio: ["ignore", "pipe", "pipe"], windowsHide: false })
+  let stdout = ""
+  let stderr = ""
+  child.stdout.on("data", (b) => (stdout += b.toString()))
+  child.stderr.on("data", (b) => (stderr += b.toString()))
+
+  let timedOut = false
+  const exitCode = await new Promise((done) => {
+    const timer = setTimeout(() => {
+      timedOut = true
+      done(null)
+    }, timeoutS * 1000)
+    child.on("exit", (code) => {
+      clearTimeout(timer)
+      done(code)
+    })
+  })
+
+  // 报告：优先显式路径，其次 Reports 里变动过的最新一份
+  let reportPath = null
+  if (explicitReport && existsSync(explicitReport)) reportPath = explicitReport
+  else {
+    const after = snapshot()
+    const changed = [...after.entries()].filter(([p, m]) => !before.has(p) || before.get(p) !== m).sort((a, b) => b[1] - a[1])
+    if (changed.length) reportPath = changed[0][0]
+  }
+
+  const reportText = reportPath ? readFileSync(reportPath, "utf8") : ""
+  const oks = (reportText.match(/\[\s*OK\s*\]/g) ?? []).length
+  const fails = (reportText.match(/\[\s*FAIL\s*\]/g) ?? []).length
+
+  return {
+    timedOut,
+    exitCode,
+    pid: child.pid,
+    ms: Date.now() - started,
+    stdout,
+    stderr,
+    reportPath,
+    reportText,
+    oks,
+    fails,
+  }
+}
+
+// ---------------------------------------------------------------- 启动前检查
+// 所有「要启动 Kontakt」的脚本共用：脚本存在 + 在允许的目录内 + 可执行 + API 开关。
+export function preflight(args, script = null) {
+  const ws = workspaceDir(args)
+  const problems = []
+  const notes = []
+  const exe = args.get("exe") || KONTAKT_EXE_CANDIDATES.find((p) => existsSync(p)) || ""
+
+  if (script) {
+    if (!existsSync(script)) problems.push(`脚本不存在：${script}`)
+    const low = (p) => p.toLowerCase().replace(/\//g, "\\")
+    const inside = low(script).startsWith(low(ws)) || low(script).startsWith(low(SKILL_SCRIPTS))
+    if (!inside && !args.bool("allow-outside")) problems.push(`脚本在工作区和 skill scripts 之外：${script}（要跑加 --allow-outside）`)
+  }
+  if (!exe || !existsSync(exe)) problems.push(`找不到 Kontakt 可执行${exe ? `：${exe}` : ""}`)
+
+  const dev = readDeveloperFeatures()
+  if (!dev) problems.push("读不到 DeveloperFeatures（Kontakt 至少启动过一次再试）")
+  else if (dev.value !== 1) problems.push(`DeveloperFeatures = ${dev.value}，脚本会静默不执行 —— 先置 1`)
+
+  const instances = listKontaktProcesses()
+  if (instances.length) notes.push(`已经有一个 Kontakt 在跑：${instances.join("；")} —— 会抢音频设备，确认不是你在用的工程`)
+
+  return { exe, problems, notes, dev, workspace: ws }
+}
+
+// Lua 侧用 kontakt_lib.machine_block() 往报告里塞一段 TSV，Node 侧在这里取回来。
+export function parseMachineBlock(text, name = "MACHINE") {
+  const begin = `---- ${name} ----`
+  const end = `---- /${name} ----`
+  const i = text.indexOf(begin)
+  if (i < 0) return null
+  const j = text.indexOf(end, i + begin.length)
+  if (j < 0) return null
+  const body = text.slice(i + begin.length, j).trim()
+  const lines = body.split(/\r?\n/).filter((l) => l.trim())
+  if (!lines.length) return []
+  const header = lines[0].split("\t")
+  return lines.slice(1).map((l) => Object.fromEntries(header.map((h, k) => [h, (l.split("\t")[k] ?? "").trim()])))
+}
+
+// ---------------------------------------------------------------- 音名 ↔ MIDI
+// Kontakt 的默认八度记法：C3 = 60（所以 C0 = 12，C-1 = 0）。
+export function noteToMidi(name, c3 = 60) {
+  const m = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(String(name).trim())
+  if (!m) return null
+  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()]
+  const acc = m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0
+  return base + acc + (Number(m[3]) + 1) * 12 + (c3 - 60)
+}
+
+export function midiToNote(n, c3 = 60) {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+  const v = Number(n)
+  if (!Number.isFinite(v)) return ""
+  const oct = Math.floor((v - (c3 - 60)) / 12) - 1
+  return `${names[((v - (c3 - 60)) % 12 + 12) % 12]}${oct}`
+}
+
 

@@ -242,6 +242,131 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "gen_multi",
+        description:
+          "【核心】清单 → .nkm：A1 建空 multi → A2 逐槽装载 → A3 设参数（名字/MIDI 通道/输出/音量/声像/" +
+          "keysw 等 instrument options，麦克风按未加密·加密分流）→ A5 存盘 → A6 **重载回读并与期望值自动比对**。\n" +
+          "一条 multi 一个 Kontakt 进程。默认先出计划表；planOnly=true 只出计划，dryRun=true 会写 job.lua 但不启动。" +
+          "期望值写到 Generated\\_expect\\<multi>.csv，供 verify_multi 复用。",
+        input: {
+          type: "object",
+          properties: {
+            manifest: { type: "string", description: "清单路径，默认 <工作区>\\manifest\\manifest.tsv" },
+            profiles: { type: "string" },
+            multi: { type: "array", items: { type: "string" }, description: "只做这些 multi（默认全部）" },
+            outDir: { type: "string", description: "产物目录，默认 <工作区>\\Generated" },
+            saveMode: { type: "string", description: "patch（默认）| monolith | samples" },
+            planOnly: { type: "boolean", description: "只出计划" },
+            dryRun: { type: "boolean", description: "写 job.lua 但不启动 Kontakt" },
+            timeout: { type: "number", description: "秒，默认 300" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["manifest", "profiles", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("multi", i.multi), ...opt("out-dir", i.outDir), ...opt("save-mode", i.saveMode), ...opt("timeout", i.timeout))
+          args.push(...opt("plan-only", i.planOnly), ...opt("dry-run", i.dryRun))
+          return text(await run("gen-multi.mjs", args, 900_000, 120_000))
+        },
+      })
+
+      editor.add({
+        name: "inspect_multi",
+        description:
+          "侦察一个 .nkm（只读）：槽位参数（名字/MIDI/输出/音量/声像/调音/复音/keysw）、每个槽**是不是加密/Player 库**、" +
+          "group 名普查、麦克风读数。自己的旧的、别人给的、手做的都能看。",
+        input: {
+          type: "object",
+          properties: {
+            nkm: { type: "string", description: ".nkm 路径" },
+            multi: { type: "string", description: "或者给 multi 名，去 Generated\\<名>.nkm 找" },
+            census: { type: "number", description: "每个槽列多少 group 名，默认 15" },
+            mic: { type: "array", items: { type: "string" }, description: "要读的麦克风名" },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["nkm", "multi", "census", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("mic", i.mic), ...opt("dry-run", i.dryRun))
+          return text(await run("inspect-multi.mjs", args, 900_000, 120_000))
+        },
+      })
+
+      editor.add({
+        name: "verify_multi",
+        description:
+          "回读一个已有 .nkm 并与期望值比对：有 Generated\\_expect\\<multi>.csv 就逐字段比（PASS/FAIL 表），" +
+          "没有就只回读。适合检查「上次生成的东西现在还是不是那样」。",
+        input: {
+          type: "object",
+          properties: {
+            nkm: { type: "string" },
+            multi: { type: "string", description: "或给 multi 名去 Generated 找" },
+            expect: { type: "string", description: "期望值 CSV（默认按 multi 名找）" },
+            micExpect: { type: "string" },
+            mic: { type: "array", items: { type: "string" } },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["nkm", "multi", "expect", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("mic-expect", i.micExpect), ...opt("mic", i.mic), ...opt("dry-run", i.dryRun))
+          return text(await run("verify-multi.mjs", args, 900_000, 120_000))
+        },
+      })
+
+      editor.add({
+        name: "probe_library",
+        description:
+          "进新库先探测（只读）：库类型（加密/Player？）、group 数、group 名普查、麦克风名候选（精确命中 + 词频线索）、" +
+          "未加密库还能读到各麦克风的音量区间。\n" +
+          "对象：patch=[.nki 路径…] 或 library=<库名>（从索引里挑几个浅的，spread=true 尽量分布在不同目录）。" +
+          "api=true 则只列 Kontakt 里可用的函数（确认某版本有没有某个 API）。",
+        input: {
+          type: "object",
+          properties: {
+            patch: { type: "array", items: { type: "string" }, description: "要探测的 .nki" },
+            library: { type: "string", description: "或给库名（用索引挑）" },
+            limit: { type: "number", description: "挑几个，默认 3" },
+            spread: { type: "boolean", description: "尽量来自不同目录" },
+            census: { type: "number", description: "列多少 group 名，默认 20" },
+            words: { type: "number", description: "列多少词频候选，默认 25" },
+            api: { type: "boolean", description: "只列 API" },
+            check: { type: "array", items: { type: "string" }, description: "api 模式下重点确认的 API 名" },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["library", "limit", "census", "words", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("patch", i.patch), ...opt("check", i.check))
+          args.push(...opt("spread", i.spread), ...opt("api", i.api), ...opt("dry-run", i.dryRun))
+          return text(await run("probe-library.mjs", args, 900_000, 150_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +

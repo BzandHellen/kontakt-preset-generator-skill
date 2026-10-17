@@ -31,6 +31,10 @@ description: >-
 | `kontakt_manifest_lint` | 否 | 清单体检：必填列、文件存在、slot/midi/port/out/vol/pan、multi 名、mic profile |
 | `kontakt_profiles` | 否 | 看 `profiles.lua`：defaults / pan_by_section / mic_aliases / mic_profiles |
 | `kontakt_reports` | 否 | 汇总 `Reports\*.txt`（列表 / 单份明细 / 写 `manifest.verify.csv`） |
+| `kontakt_gen_multi` | **是** | 清单 → `.nkm`（A1–A6），存盘后重载回读并与期望值自动比对 |
+| `kontakt_inspect_multi` | **是** | 侦察 `.nkm`：槽位参数、库是否加密、group 名普查、麦克风读数（只读） |
+| `kontakt_verify_multi` | **是** | 回读已有 `.nkm` 并与 `Generated\_expect\<multi>.csv` 比对 |
+| `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API（只读） |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
 ## 核心事实（决定一切设计）
@@ -81,8 +85,9 @@ description: >-
 
 ## 进度
 
-- **M1 已完成**：`env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua`。
-- M2：`probe_library` / `gen_multi`（`gen_multis.lua` 还没写）/ `inspect_multi` / `verify_multi`。
+- **M1 已完成**（harness 工具接口验过）：`env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua`。
+- **M2 已写完，等实跑验证**：`gen_multi`（清单 → `.nkm` + 重载回读自动比对）/ `inspect_multi` / `verify_multi` / `probe_library`（含 `api` 模式）。
+  代码与模板都在，dry-run 通过；Lua 模板的语法只能靠真跑一次 Kontakt 才能确认（本机没有 Lua 解释器）。
 - M3：`plan` / `learn_mic` / `apply_snapshot`。
 - M4：`to_vepro`（可选）。
 

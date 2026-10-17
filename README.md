@@ -20,11 +20,16 @@
 
 | 目录 | 内容 |
 |---|---|
+| 目录 | 内容 |
+|---|---|
 | `SKILL.md` | 技能正文：已注册工具、Kontakt Lua 的核心事实与坑、写盘安全、标准工作流 |
 | `plugin/index.ts` | 把 `scripts/*.mjs` 注册成 `kontakt` 命名空间的 OpenCode 工具 |
-| `scripts/` | Node 脚本（`env` / `db-build` / `db-query` / `manifest-lint` / `profiles` / `reports` / `run-lua`） |
+| `scripts/` | Node 脚本（M1：`env`/`db-build`/`db-query`/`manifest-lint`/`profiles`/`reports`/`run-lua`；M2：`gen-multi`/`inspect-multi`/`verify-multi`/`probe-library` + `lib`/`job`/`plan`/`compare`；`kontakt_lib.lua` 是 Lua 侧公共库） |
+| `templates/` | Lua 作业模板（`job_gen_multi` / `job_inspect_multi` / `job_verify_multi` / `job_probe_library`），配置由 Node 注入 |
 | `config/` | 本机配置：库扫描根（真文件 gitignore，只留 `.example.jsonc`） |
 | `data/` | 扫库生成的 patch 索引（可重建，不进 git） |
+
+作业落在工作区 `<工作区>\jobs\<时间戳>-<slug>\job.lua`：一个 Lua 脚本 + 配置内嵌，可直接看懂、也能自己手动跑。
 
 只跑 Node 标准库，不依赖 PowerShell。脚本都能单独跑：
 `node scripts/env.mjs`、`node scripts/db-query.mjs --library=Berlin`…
@@ -47,7 +52,7 @@
 | 期 | 内容 | 状态 |
 |---|---|---|
 | M1 | `env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua` | ✅ |
-| M2 | `probe_library` / `gen_multi`（写 `gen_multis.lua`）/ `inspect_multi` / `verify_multi` | — |
+| M2 | `gen_multi` / `inspect_multi` / `verify_multi` / `probe_library` | 已写完，等实跑验证 |
 | M3 | `plan` / `learn_mic` / `apply_snapshot` | — |
 | M4 | `to_vepro`（可选） | — |
 
