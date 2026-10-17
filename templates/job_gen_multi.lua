@@ -55,7 +55,7 @@ for i, s in ipairs(JOB.slots) do
 
     if s.mic and s.mic.mode == "groups" and next(s.mic.spec or {}) ~= nil then
       K.log("  —— 麦克风（直接写 group 音量）——")
-      K.apply_group_mics(idx, s.mic.spec)
+      K.apply_group_mics(idx, s.mic.spec, s.mic.aliases)
     elseif s.mic and s.mic.mode == "snapshot" then
       K.log("  —— 麦克风：走 snapshot（加密库，group 音量写不住）——")
     elseif s.mic and s.mic.mode == "skipped" then
@@ -73,14 +73,20 @@ end
 
 -- ---------------------------------------------------------------- A5 存盘
 K.log("\n---- 库类型（受保护 = 加密/Player，group 音量那条路对它无效）----")
-for _, line in ipairs(K.machine_block({ "slot", "protected", "scripts" }, libs)) do K.log(line) end
+for _, line in ipairs(K.machine_block({ "slot", "protected", "scripts" }, libs, "LIBS")) do K.log(line) end
 
 K.log("\n---- 存盘 ----")
 K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })
 local info = Kontakt.get_file_info(JOB.out_nkm)
 if info ~= nil then
-  local sz = (type(info) == "table" and (info.size or info.file_size)) or "?"
-  K.log("[ OK ] 文件已写出 -> %s  大小=%s", JOB.out_nkm, tostring(sz))
+  local bits = {}
+  if type(info) == "table" then
+    for k, v in pairs(info) do bits[#bits + 1] = string.format("%s=%s", tostring(k), tostring(v)) end
+    table.sort(bits)
+  else
+    bits[1] = tostring(info)
+  end
+  K.log("[ OK ] 文件已写出 -> %s  %s", JOB.out_nkm, table.concat(bits, "  "))
 else
   K.log("[FAIL] 文件没写出来 -> %s", JOB.out_nkm)
 end
@@ -90,9 +96,10 @@ K.log("\n---- 重载回读（判断参数是否真写进文件）----")
 local reloaded = K.try("load_multi", Kontakt.load_multi, JOB.out_nkm)
 local rows = reloaded and K.dump_all_slots() or {}
 K.log("  槽位数 = %d", #rows)
-for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows)) do K.log(line) end
+for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows, "SLOTS")) do K.log(line) end
 
 -- 麦克风读数（未加密库才有意义；加密库重载后会被库复位）
+-- 每个期望的麦克风都出一行，找不到的 n=0 —— 这样 Node 侧能区分「别名没覆盖」和「库复位」
 local mics = {}
 for i, s in ipairs(JOB.slots) do
   local idx = placed[i]
@@ -101,8 +108,10 @@ for i, s in ipairs(JOB.slots) do
     for k in pairs(s.mic.spec) do
       if k ~= "others" then keys[#keys + 1] = K.upper(k) end
     end
-    local lv = K.mic_levels(idx, keys)
-    for k, a in pairs(lv) do
+    table.sort(keys)
+    local lv = K.mic_levels(idx, keys, s.mic.aliases)
+    for _, k in ipairs(keys) do
+      local a = lv[k] or { n = 0, min = nil, max = nil }
       mics[#mics + 1] = { slot = s.slot, mic = k, n = a.n, min = a.min, max = a.max }
     end
   end
@@ -111,7 +120,7 @@ table.sort(mics, function(a, b)
   if tostring(a.slot) ~= tostring(b.slot) then return tostring(a.slot) < tostring(b.slot) end
   return tostring(a.mic) < tostring(b.mic)
 end)
-for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max" }, mics)) do K.log(line) end
+for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max" }, mics, "MICS")) do K.log(line) end
 
 K.log("\n==== end ====")
 K.write_report(JOB.report)

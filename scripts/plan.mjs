@@ -65,16 +65,17 @@ export function loadProfiles(args) {
   }
 }
 
-// mic 列 → { mode, spec, snapshot, note }
+// mic 列 → { mode, spec, aliases, snapshot, note }
 //   ""                 → defaults.mic 的 profile
 //   "berlin_close_main"→ profiles.mic_profiles 里的 profile
 //   "CLOSE=-6;TREE=-8" → 内联
 //   "learn:<文件>"     → M3 才有，这里标记出来不静默丢
-function resolveMic(raw, defaults, profiles) {
+function resolveMic(raw, defaults, profiles, patchPath) {
   const text = String(raw || defaults.mic || "").trim()
-  if (!text || text === "unity") return { mode: "groups", spec: {}, note: "unity（不改麦克风）" }
+  const aliases = aliasesFor(patchPath, profiles.mic_aliases)
+  if (!text || text === "unity") return { mode: "groups", spec: {}, aliases, note: "unity（不改麦克风）" }
   if (text.startsWith("learn:")) {
-    return { mode: "skipped", spec: {}, note: `learn:（M3 才实现，本次跳过）：${text.slice(6)}` }
+    return { mode: "skipped", spec: {}, aliases, note: `learn:（M3 才实现，本次跳过）：${text.slice(6)}` }
   }
   if (text.includes("=")) {
     const spec = {}
@@ -84,11 +85,31 @@ function resolveMic(raw, defaults, profiles) {
       const v = m[2].toLowerCase()
       spec[m[1]] = v === "off" || v === "mute" ? "off" : Number(m[2])
     }
-    return { mode: "groups", spec, note: "内联" }
+    return { mode: "groups", spec, aliases, note: "内联" }
   }
   const spec = profiles.mic_profiles?.[text]
-  if (!spec) return { mode: "skipped", spec: {}, note: `profiles 里没有 profile「${text}」` }
-  return { mode: "groups", spec, note: text }
+  if (!spec) return { mode: "skipped", spec: {}, aliases, note: `profiles 里没有 profile「${text}」` }
+  return { mode: "groups", spec, aliases, note: text }
+}
+
+// 该 patch 属于哪个库的别名表：拿 mic_aliases 的键（berlin / css …）去比 patch 路径
+export function aliasesFor(patchPath, micAliases) {
+  const p = String(patchPath || "").toLowerCase().replace(/\\/g, "/")
+  for (const [key, table] of Object.entries(micAliases ?? {})) {
+    if (key && p.includes(key.toLowerCase())) return table
+  }
+  return {}
+}
+
+// 所有库的别名表并起来（verify 时不知道槽属于哪个库，用并集）
+export function mergedAliases(profiles) {
+  const out = {}
+  for (const table of Object.values(profiles.mic_aliases ?? {})) {
+    for (const [std, names] of Object.entries(table ?? {})) {
+      out[std] = [...new Set([...(out[std] ?? []), ...[].concat(names)])]
+    }
+  }
+  return out
 }
 
 export function planManifest(args) {
@@ -135,7 +156,7 @@ export function planManifest(args) {
       }
       const port = (r.get("port") || defaults.port || "A").toUpperCase()
       const midi = r.get("midi") !== "" ? Number(r.get("midi")) : Math.min(i + 1, 16)
-      const mic = resolveMic(r.get("mic"), defaults, prof.value)
+      const mic = resolveMic(r.get("mic"), defaults, prof.value, r.get("patch"))
       const ks = parseKeysw(r.get("keysw"))
       const explicitPan = r.get("pan") !== ""
       slots.push({

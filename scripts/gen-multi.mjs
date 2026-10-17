@@ -21,7 +21,7 @@ import {
 } from "./lib.mjs"
 import { renderJob } from "./job.mjs"
 import { expectPaths, planManifest, writeExpect } from "./plan.mjs"
-import { compareMics, compareSlots, protectedSlots } from "./compare.mjs"
+import { compareMics, compareSlots, classifyMicIssues, jobCompleted, protectedSlots } from "./compare.mjs"
 
 const args = parseArgs()
 const dry = args.bool("dry-run")
@@ -112,7 +112,7 @@ for (const m of plan.multis) {
       out: s.out,
       vol: s.vol,
       pan: s.pan,
-      mic: { mode: s.mic.mode, spec: s.mic.spec, note: s.mic.note },
+      mic: { mode: s.mic.mode, spec: s.mic.spec, aliases: s.mic.aliases, note: s.mic.note },
       snapshot: s.snapshot ? s.snapshot.replace(/\\/g, "/") : null,
       options: s.options,
     })),
@@ -155,7 +155,7 @@ for (const m of plan.multis) {
   }
 
   // 期望 vs 回读
-  const actual = parseMachineBlock(res.reportText, "MACHINE")
+  const actual = parseMachineBlock(res.reportText, "SLOTS")
   const actualMics = parseMachineBlock(res.reportText, "MICS")
   const libs = parseMachineBlock(res.reportText, "LIBS") ?? []
   const prot = protectedSlots(libs)
@@ -180,22 +180,46 @@ for (const m of plan.multis) {
   } else console.log("全部一致。")
 
   const micSkipped = micExpect.filter((e) => prot.has(String(e.slot)))
-  console.log(`\n---- 麦克风比对（${mics.checks.length} 项：PASS ${mics.checks.filter((c) => c.ok).length} / FAIL ${mics.issues.length}）`)
-  if (mics.issues.length) {
+  const { real: micReal, reset: micReset, missing: micMissing } = classifyMicIssues(mics.issues, actualMics ?? [])
+  console.log(
+    `\n---- 麦克风比对（${mics.checks.length} 项：PASS ${mics.checks.filter((c) => c.ok).length} / FAIL ${micReal.length}）`,
+  )
+  if (micReal.length) {
     console.log(
-      tableText(["槽", "麦克风", "期望 dB", "实际"], mics.issues.map((i) => ({ 槽: i.slot, 麦克风: i.mic, "期望 dB": i.expect, 实际: i.actual }))),
+      tableText(["槽", "麦克风", "期望 dB", "实际"], micReal.map((i) => ({ 槽: i.slot, 麦克风: i.mic, "期望 dB": i.expect, 实际: i.actual }))),
     )
   } else if (mics.checks.length) console.log("全部一致。")
+  if (micReset.length) {
+    const slots = [...new Set(micReset.map((i) => i.slot))].join("、")
+    console.log(
+      `\n⚠ 有 ${micReset.length} 条麦克风写进去又被库**复位**了（槽 ${slots}）：重载后读回默认值。\n` +
+        `   这不是我们写错 —— 这类库（加密/Player）根本不持久化 group 音量。给这些库在清单里配 snapshot=<库的 .nksn>。`,
+    )
+  }
+  if (micMissing.length) {
+    const pairs = [...new Set(micMissing.map((i) => `${i.slot}/${i.mic}`))].join("、")
+    console.log(
+      `\n⚠ 有 ${micMissing.length} 条期望的麦克风在这些 patch 里**找不到对应的 group**（槽/名字：${pairs}）。\n` +
+        `   这是 profiles 的 mic_aliases 没覆盖到这些 patch，用 probe_library 普查后补别名。`,
+    )
+  }
   if (micSkipped.length) {
     console.log(
       `\n⛔ 有 ${micSkipped.length} 条麦克风期望落在**受保护（加密/Player）**的槽上：` +
         `${[...new Set(micSkipped.map((e) => e.slot))].join("、")}\n` +
-        `   这类库的 group 音量存不住（重载会被复位），数值上无法验证 —— 它只能靠 snapshot。\n` +
-        `   给这些库在清单里配 snapshot=<库的 .nksn>，或者用 snapshot 通路另行确认。`,
+        `   装载时已拦下（没白写），它只能靠 snapshot。`,
     )
   }
 
-  const fail = slots.issues.length + mics.issues.length + res.fails
+  const completed = jobCompleted(res.reportText)
+  if (!res.timedOut && res.exitCode !== 0 && completed) {
+    console.log(
+      `\n注：Kontakt 退出时崩了（code ${res.exitCode}），但报告有结尾（==== end ====）—— 作业本身跑完了。\n` +
+        `   这是 Kontakt 关机阶段的问题，不影响产物；报告在 ${res.reportPath}。`,
+    )
+  }
+
+  const fail = slots.issues.length + micReal.length + res.fails
   failTotal += fail
   summary.push({ multi: m.multi, state: res.timedOut ? "超时" : "完成", pass: slots.checks.filter((c) => c.ok).length + mics.checks.filter((c) => c.ok).length, fail })
 }

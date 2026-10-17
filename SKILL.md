@@ -86,9 +86,12 @@ description: >-
 ## 进度
 
 - **M1 已完成**（harness 工具接口验过）：`env` / `db_build` / `db_query` / `manifest_lint` / `profiles` / `reports` / `run_lua`。
-- **M2 已写完，等实跑验证**：`gen_multi`（清单 → `.nkm` + 重载回读自动比对）/ `inspect_multi` / `verify_multi` / `probe_library`（含 `api` 模式）。
-  代码与模板都在，dry-run 通过；Lua 模板的语法只能靠真跑一次 Kontakt 才能确认（本机没有 Lua 解释器）。
-- M3：`plan` / `learn_mic` / `apply_snapshot`。
+- **M2 已完成**（真跑 Kontakt 验过）：
+  - `gen_multi`：样例清单（5 槽 Berlin Strings）→ `.nkm` 16.5 MB，参数回读 **25/25 一致**，
+    麦克风按「未加密写 group / 加密拦下走 snapshot」分流 + 回读判定「库复位」。
+  - `inspect_multi` / `verify_multi` / `probe_library`（含 `api` 模式）都实跑通过。
+  - 细节与新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
+- M3：`plan`（已作为内部模块）/ `learn_mic` / `apply_snapshot`。
 - M4：`to_vepro`（可选）。
 
 ## 维护

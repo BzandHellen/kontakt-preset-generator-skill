@@ -16,7 +16,7 @@ if ok then
 end
 local rows = ok and K.dump_all_slots() or {}
 K.log("  槽位数 = %d", #rows)
-for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows)) do K.log(line) end
+for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows, "SLOTS")) do K.log(line) end
 
 -- 每个槽的脚本槽状态（受保护 = 加密/Player 库，group 音量那条路对它无效）
 for _, r in ipairs(rows) do
@@ -29,8 +29,12 @@ end
 local mics = {}
 if JOB.mic_names and #JOB.mic_names > 0 then
   for _, r in ipairs(rows) do
-    local lv = K.mic_levels(r.idx, JOB.mic_names)
-    for k, a in pairs(lv) do
+    local names = {}
+    for _, n in ipairs(JOB.mic_names) do names[#names + 1] = K.upper(n) end
+    table.sort(names)
+    local lv = K.mic_levels(r.idx, names, JOB.mic_aliases)
+    for _, k in ipairs(names) do
+      local a = lv[k] or { n = 0, min = nil, max = nil }
       mics[#mics + 1] = { slot = r.slot, mic = k, n = a.n, min = a.min, max = a.max }
     end
   end
@@ -39,7 +43,7 @@ table.sort(mics, function(a, b)
   if tostring(a.slot) ~= tostring(b.slot) then return tostring(a.slot) < tostring(b.slot) end
   return tostring(a.mic) < tostring(b.mic)
 end)
-for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max" }, mics)) do K.log(line) end
+for _, line in ipairs(K.machine_block({ "slot", "mic", "n", "min", "max" }, mics, "MICS")) do K.log(line) end
 
 K.log("\n==== end ====")
 K.write_report(JOB.report)

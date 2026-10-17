@@ -6,7 +6,6 @@ import { existsSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import {
   EXIT,
-  UsageError,
   bullet,
   launchKontakt,
   parseArgs,
@@ -18,8 +17,8 @@ import {
   workspaceDir,
 } from "./lib.mjs"
 import { renderJob } from "./job.mjs"
-import { expectPaths } from "./plan.mjs"
-import { compareMics, compareSlots } from "./compare.mjs"
+import { expectPaths, loadProfiles, mergedAliases } from "./plan.mjs"
+import { classifyMicIssues, compareMics, compareSlots, jobCompleted } from "./compare.mjs"
 
 const args = parseArgs()
 const ws = workspaceDir(args)
@@ -34,10 +33,7 @@ if (!nkm) {
     console.error("[用法] 要 --nkm=<文件> 或 --multi=<multi 名>")
     process.exit(EXIT.USAGE)
   }
-  const cands = [
-    join(ws, "Generated", `${multi}.nkm`),
-    join(ws, "Generated", "_test", `${multi}.nkm`),
-  ]
+  const cands = [join(ws, "Generated", `${multi}.nkm`), join(ws, "Generated", "_test", `${multi}.nkm`)]
   nkm = cands.find((p) => existsSync(p)) ?? cands[0]
 }
 nkm = resolve(nkm)
@@ -65,7 +61,12 @@ const micNamesFinal = micNames.length
     : ["SOLO", "CLOSE", "AB", "TREE", "SURROUND", "MAIN", "MIX", "ROOM"]
 
 const report = join(repDir, `verify-${multiName}-${stampText()}.txt`).replace(/\\/g, "/")
-const job = { nkm: nkm.replace(/\\/g, "/"), report, mic_names: micNamesFinal }
+const job = {
+  nkm: nkm.replace(/\\/g, "/"),
+  report,
+  mic_names: micNamesFinal,
+  mic_aliases: mergedAliases(loadProfiles(args).value),
+}
 const rendered = renderJob("job_verify_multi.lua", job, { args, slug: `verify-${multiName}` })
 
 console.log(bullet("回读 multi"))
@@ -90,7 +91,7 @@ const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, 
 console.log(`\n退出：${res.timedOut ? `超时（${timeoutS}s，pid ${res.pid} 留着没杀）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
 console.log(`报告：${res.reportPath ?? "（没找到）"}　OK ${res.oks} / FAIL ${res.fails}`)
 
-const rows = parseMachineBlock(res.reportText, "MACHINE") ?? []
+const rows = parseMachineBlock(res.reportText, "SLOTS") ?? []
 if (rows.length) {
   console.log(`\n---- 槽位（${rows.length}）`)
   console.log(
@@ -137,14 +138,29 @@ if (expectRows) {
 
   if (micExpect && micExpect.length) {
     const cm = compareMics(micExpect, micActual)
-    console.log(`\n---- 麦克风比对（${cm.checks.length} 项：PASS ${cm.checks.filter((c) => c.ok).length} / FAIL ${cm.issues.length}）`)
-    if (cm.issues.length) {
+    const { real, reset, missing } = classifyMicIssues(cm.issues, micActual)
+    console.log(`\n---- 麦克风比对（${cm.checks.length} 项：PASS ${cm.checks.filter((c) => c.ok).length} / FAIL ${real.length}）`)
+    if (real.length) {
       console.log(
-        tableText(["槽", "麦克风", "期望 dB", "实际"], cm.issues.map((i) => ({ 槽: i.slot, 麦克风: i.mic, "期望 dB": i.expect, 实际: i.actual }))),
+        tableText(["槽", "麦克风", "期望 dB", "实际"], real.map((i) => ({ 槽: i.slot, 麦克风: i.mic, "期望 dB": i.expect, 实际: i.actual }))),
       )
-      failTotal += cm.issues.length
+      failTotal += real.length
     } else if (cm.checks.length) console.log("全部一致。")
+    if (reset.length) {
+      console.log(
+        `\n⚠ ${reset.length} 条写进去又被库复位了（槽 ${[...new Set(reset.map((i) => i.slot))].join("、")}）` +
+          `—— 这类库（加密/Player）不持久化 group 音量，只能靠 snapshot。`,
+      )
+    }
+    if (missing.length) {
+      const pairs = [...new Set(missing.map((i) => `${i.slot}/${i.mic}`))].join("、")
+      console.log(`\n⚠ ${missing.length} 条期望的麦克风在这些 patch 里找不到对应 group（${pairs}）—— 别名表没覆盖，用 probe_library 普查后补。`)
+    }
   }
+}
+
+if (!res.timedOut && res.exitCode !== 0 && jobCompleted(res.reportText)) {
+  console.log(`\n注：作业跑完了（报告有结尾），只是 Kontakt 退出时崩了（code ${res.exitCode}）。`)
 }
 
 console.log(`\n结论：${failTotal ? `${failTotal} 处 FAIL` : "回读正常"}`)

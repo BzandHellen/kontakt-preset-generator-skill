@@ -18,7 +18,7 @@ end
 K.try("get_multi_name", Kontakt.get_multi_name)
 local rows = K.dump_all_slots()
 K.log("  槽位数 = %d（multi 名：%s）", #rows, tostring(Kontakt.get_multi_name()))
-for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows)) do K.log(line) end
+for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows, "SLOTS")) do K.log(line) end
 
 -- 逐槽细看：脚本槽 + group 名普查 + 麦克风读数
 for _, r in ipairs(rows) do
@@ -33,7 +33,7 @@ for _, r in ipairs(rows) do
     K.log("       %5d x  %s", counts[order[i]], order[i])
   end
   if JOB.mic_names and #JOB.mic_names > 0 then
-    local lv = K.mic_levels(r.idx, JOB.mic_names)
+    local lv = K.mic_levels(r.idx, JOB.mic_names, JOB.mic_aliases)
     local keys = {}
     for k in pairs(lv) do keys[#keys + 1] = k end
     table.sort(keys)

@@ -16,6 +16,7 @@ import {
   workspaceDir,
 } from "./lib.mjs"
 import { renderJob } from "./job.mjs"
+import { loadProfiles, mergedAliases } from "./plan.mjs"
 
 const args = parseArgs()
 const ws = workspaceDir(args)
@@ -38,13 +39,22 @@ if (!existsSync(nkm)) {
 }
 
 const name = basename(nkm).replace(/\.nkm$/i, "")
-const micNames = (args.getAll("mic").length ? args.getAll("mic") : ["SOLO", "CLOSE", "AB", "TREE", "SURROUND", "MAIN", "MIX", "ROOM", "SPOT", "DECCA", "FULL"])
-  .map((s) => s.toUpperCase())
+const micNames = (
+  args.getAll("mic").length
+    ? args.getAll("mic")
+    : ["SOLO", "CLOSE", "AB", "TREE", "SURROUND", "MAIN", "MIX", "ROOM", "SPOT", "DECCA", "FULL"]
+).map((s) => s.toUpperCase())
 const report = join(repDir, `inspect-${name}-${stampText()}.txt`).replace(/\\/g, "/")
 
 const rendered = renderJob(
   "job_inspect_multi.lua",
-  { nkm: nkm.replace(/\\/g, "/"), report, census: args.num("census", 15), mic_names: micNames },
+  {
+    nkm: nkm.replace(/\\/g, "/"),
+    report,
+    census: args.num("census", 15),
+    mic_names: micNames,
+    mic_aliases: mergedAliases(loadProfiles(args).value),
+  },
   { args, slug: `inspect-${name}` },
 )
 
@@ -68,17 +78,28 @@ const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, 
 console.log(`\n退出：${res.timedOut ? `超时（${timeoutS}s）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
 console.log(`报告：${res.reportPath ?? "（没找到）"}`)
 
-const rows = parseMachineBlock(res.reportText, "MACHINE") ?? []
+const rows = parseMachineBlock(res.reportText, "SLOTS") ?? []
 if (rows.length) {
   console.log(`\n---- 槽位（${rows.length}）`)
   console.log(
     tableText(
       ["槽", "乐器名", "MIDI", "输出", "音量", "声像", "调音", "复音", "keysw"],
-      rows.map((r) => ({ 槽: r.slot, 乐器名: r.name, MIDI: r.midi, 输出: r.out, 音量: r.vol, 声像: r.pan, 调音: r.tune, 复音: r.poly, keysw: r.keysw === "" ? "—" : r.keysw })),
+      rows.map((r) => ({
+        槽: r.slot,
+        乐器名: r.name,
+        MIDI: r.midi,
+        输出: r.out,
+        音量: r.vol,
+        声像: r.pan,
+        调音: r.tune,
+        复音: r.poly,
+        keysw: r.keysw === "" ? "—" : r.keysw,
+      })),
     ),
   )
 }
-if (res.reportPath) {
+
+if (res.reportPath && existsSync(res.reportPath)) {
   console.log(`\n---- 明细（报告原文）----`)
   const text = readFileSync(res.reportPath, "utf8")
   const lines = text.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("----"))
@@ -86,6 +107,7 @@ if (res.reportPath) {
   if (lines.length > 160) console.log(`（太长，只列最后 160 行，共 ${lines.length} 行）`)
   console.log(tail.join("\n"))
 }
+
 console.log(`\n结论：${res.timedOut ? "超时，结果未知" : res.fails ? `${res.fails} 个 FAIL` : "读完"}`)
 process.exit(res.timedOut || res.fails ? EXIT.ISSUES : EXIT.OK)
 

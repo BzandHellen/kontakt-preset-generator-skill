@@ -60,8 +60,10 @@ function M.pass_eq(label, expected, actual)
 end
 
 -- ---------------------------------------------------------------- 报告
-function M.machine_block(cols, rows)
-  local out = { "---- MACHINE ----", table.concat(cols, "\t") }
+-- 机器可读块：每块起个不同名字（Node 侧按名字取）
+function M.machine_block(cols, rows, name)
+  local tag = name or "MACHINE"
+  local out = { "---- " .. tag .. " ----", table.concat(cols, "\t") }
   for _, r in ipairs(rows) do
     local cells = {}
     for i, c in ipairs(cols) do
@@ -74,7 +76,7 @@ function M.machine_block(cols, rows)
     end
     out[#out + 1] = table.concat(cells, "\t")
   end
-  out[#out + 1] = "---- /MACHINE ----"
+  out[#out + 1] = "---- /" .. tag .. " ----"
   return out
 end
 
@@ -147,23 +149,35 @@ function M.group_census(idx, cap)
 end
 
 -- 三种匹配：精确 → 结尾词 → 包含（多命中时取最长键，避免 "AB" 撞进别的词）
-function M.match_mic(upper_name, keys)
-  for _, k in ipairs(keys) do
-    if upper_name == k then return k, "exact" end
+-- list 是 { {name=UPPER名字, key=标准名}, ... }；返回命中的标准名与匹配方式
+function M.match_candidate(upper_name, list)
+  for _, c in ipairs(list) do
+    if upper_name == c.name then return c.key, "exact" end
   end
   local best, how
-  for _, k in ipairs(keys) do
-    if #k > 0 and string.sub(upper_name, -#k) == k then
-      if best == nil or #k > #best then best, how = k, "suffix" end
+  for _, c in ipairs(list) do
+    if #c.name > 0 and string.sub(upper_name, -#c.name) == c.name then
+      if best == nil or #c.name > #best then best, how = c.key, "suffix" end
     end
   end
   if best then return best, how end
-  for _, k in ipairs(keys) do
-    if #k > 0 and string.find(upper_name, k, 1, true) then
-      if best == nil or #k > #best then best, how = k, "contains" end
+  for _, c in ipairs(list) do
+    if #c.name > 0 and string.find(upper_name, c.name, 1, true) then
+      if best == nil or #c.name > #best then best, how = c.key, "contains" end
     end
   end
   return best, how
+end
+
+-- 标准名 → 该库里的实际 group 名（profiles 的 mic_aliases）。没给 aliases 就直接用标准名。
+function M.build_candidates(keys, aliases)
+  local list = {}
+  for _, k in ipairs(keys) do
+    local names = aliases and aliases[k] or nil
+    if names == nil or #names == 0 then names = { k } end
+    for _, n in ipairs(names) do list[#list + 1] = { name = M.upper(n), key = k } end
+  end
+  return list
 end
 
 -- spec: { CLOSE = -6, SOLO = "off", others = "off" }
@@ -188,8 +202,9 @@ function M.spec_value(spec, key)
 end
 
 -- 写 group 音量（未加密库这条路）
-function M.apply_group_mics(idx, spec)
+function M.apply_group_mics(idx, spec, aliases)
   local keys, others = M.split_spec(spec)
+  local cands = M.build_candidates(keys, aliases)
   local ok, ng = pcall(Kontakt.get_num_groups, idx)
   if not ok or type(ng) ~= "number" then return { err = "get_num_groups 失败" } end
   local hits = {}
@@ -197,7 +212,7 @@ function M.apply_group_mics(idx, spec)
     local o, nm = pcall(Kontakt.get_group_name, idx, g)
     if o and nm then
       local u = M.upper(nm)
-      local key, how = M.match_mic(u, keys)
+      local key, how = M.match_candidate(u, cands)
       local val
       if key then val = M.spec_value(spec, key) end
       if val == nil and others ~= nil then
@@ -212,8 +227,8 @@ function M.apply_group_mics(idx, spec)
       end
     end
   end
-  local list, names = {}, {}
-  for _, h in pairs(hits) do list[#list + 1] = h; names[#names + 1] = h.key end
+  local list = {}
+  for _, h in pairs(hits) do list[#list + 1] = h end
   table.sort(list, function(a, b) return a.key < b.key end)
   for _, h in ipairs(list) do
     M.log("   写入 group：%-12s (%s)  %d 个", h.key, h.how, h.n)
@@ -222,15 +237,16 @@ function M.apply_group_mics(idx, spec)
   return hits
 end
 
--- 读某个麦克风名下所有 group 的音量区间
-function M.mic_levels(idx, keys)
+-- 读某个麦克风名下所有 group 的音量区间（aliases：标准名 → 实际 group 名）
+function M.mic_levels(idx, keys, aliases)
   local ok, ng = pcall(Kontakt.get_num_groups, idx)
   if not ok or type(ng) ~= "number" then return {} end
+  local cands = M.build_candidates(keys, aliases)
   local agg = {}
   for g = 0, ng - 1 do
     local o, nm = pcall(Kontakt.get_group_name, idx, g)
     if o and nm then
-      local key = M.match_mic(M.upper(nm), keys)
+      local key = M.match_candidate(M.upper(nm), cands)
       if key then
         local _, v = pcall(Kontakt.get_group_volume, idx, g)
         local a = agg[key]
