@@ -1,0 +1,17 @@
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.lua text eol=lf
+*.ts text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+
+# Kontakt binaries — opaque, never diff/merge
+*.nkm binary
+*.nki binary
+*.nksn binary
+*.nkSN binary
+*.nka binary
+*.ncw binary
+*.png binary
+*.jpg binary

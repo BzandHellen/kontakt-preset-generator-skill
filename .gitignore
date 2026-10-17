@@ -1,0 +1,17 @@
+# extracted from locally installed (licensed) libraries — regenerable, machine-specific
+data/*
+!data/README.md
+
+# personal habits / preferences — local only
+references/user-habits.md
+
+# local outputs
+generated/
+Generated/
+jobs/
+Reports/*
+!Reports/.gitkeep
+
+*.tmp
+*.tmp.json
+*.log
