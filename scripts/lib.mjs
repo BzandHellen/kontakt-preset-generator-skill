@@ -1,0 +1,449 @@
+// scripts/lib.mjs —— 共享工具
+//
+// 参数解析 / 路径 / 配置 / CSV / TSV / Lua 字面量读取 / 目录遍历 / 文本输出。
+// 只跑 Node 标准库，不依赖 PowerShell（见 README「为什么脚本是 .mjs」）。
+
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { dirname, extname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { execFileSync } from "node:child_process"
+
+// ---------------------------------------------------------------- 退出码
+export const EXIT = {
+  OK: 0, // 跑完，无问题
+  ISSUES: 1, // 跑完，但发现了问题（lint 有 ERROR / 校验有 FAIL）
+  USAGE: 2, // 用法或配置不对（缺参数、配置非法、找不到清单…）
+  ENV: 3, // 环境不满足（Kontakt 没装 / Lua API 开关关着…）
+}
+
+// ---------------------------------------------------------------- 参数
+// 只认 `--key=value`（没有值即 "true"）。重复出现时 get() 取最后一个，getAll() 拿全部。
+export function parseArgs(argv = process.argv.slice(2)) {
+  const all = new Map()
+  for (const a of argv) {
+    const m = /^--([^=]+)(?:=(.*))?$/s.exec(a)
+    if (!m) continue
+    const k = m[1]
+    if (!all.has(k)) all.set(k, [])
+    all.get(k).push(m[2] === undefined ? "true" : m[2])
+  }
+  const vals = (k) => all.get(k) ?? []
+  return {
+    raw: argv,
+    has: (k) => all.has(k),
+    getAll: (k) => vals(k),
+    get: (k, dflt = undefined) => (vals(k).length ? vals(k)[vals(k).length - 1] : dflt),
+    bool: (k) => {
+      if (!all.has(k)) return false
+      return !["0", "false", "no", "off"].includes(vals(k)[vals(k).length - 1].toLowerCase())
+    },
+    num: (k, dflt = undefined) => {
+      if (!all.has(k)) return dflt
+      const n = Number(vals(k)[vals(k).length - 1])
+      return Number.isFinite(n) ? n : dflt
+    },
+  }
+}
+
+// ---------------------------------------------------------------- 路径
+export const SKILL_DIR = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]+$/, "")
+export const SKILL_SCRIPTS = join(SKILL_DIR, "scripts")
+export const SKILL_DATA = join(SKILL_DIR, "data")
+export const SKILL_CONFIG = join(SKILL_DIR, "config")
+export const DEFAULT_WORKSPACE = "C:\\VEPRO\\Kontakt Patch"
+
+// 工作区顺序：--workspace > $KONTAKT_WORKSPACE > 配置里的 workspace > 默认
+export function workspaceDir(args) {
+  const w = args?.get?.("workspace") || process.env.KONTAKT_WORKSPACE || loadConfig().workspace || DEFAULT_WORKSPACE
+  return resolve(w)
+}
+
+export function dbPath(args) {
+  return resolve(args?.get?.("db") || join(SKILL_DATA, "kontakt-patches.csv"))
+}
+
+export function manifestPath(args) {
+  return resolve(args?.get?.("manifest") || join(workspaceDir(args), "manifest", "manifest.tsv"))
+}
+
+export function profilesPath(args) {
+  return resolve(args?.get?.("profiles") || join(workspaceDir(args), "manifest", "profiles.lua"))
+}
+
+export function reportsDir(args) {
+  return resolve(args?.get?.("reports") || join(workspaceDir(args), "Reports"))
+}
+
+// ---------------------------------------------------------------- 配置
+// config/libraries.json 是本机私有的（不进 git）；没有就返回 {}，由调用方决定怎么办。
+export function loadConfig() {
+  const p = join(SKILL_CONFIG, "libraries.json")
+  if (!existsSync(p)) return {}
+  try {
+    return JSON.parse(readFileSync(p, "utf8"))
+  } catch (e) {
+    throw new UsageError(`config/libraries.json 不是合法 JSON：${e.message}`)
+  }
+}
+
+export class UsageError extends Error {}
+
+// 没有配置时只「探测候选」，绝不静默扫全盘。
+export function detectLibraryRoots() {
+  const out = []
+  for (const d of "DEFGHIJKLMNOPQRSTUVWXYZ") {
+    const p = `${d}:\\Kontakt Library`
+    if (existsSync(p)) out.push({ path: p })
+  }
+  const cs = "C:\\VEPRO\\Channel Sets\\NKI"
+  if (existsSync(cs)) out.push({ path: cs, label: "Channel Sets" })
+  return out
+}
+
+// ---------------------------------------------------------------- 文本输出
+export function tableText(headers, rows) {
+  const cells = rows.map((r) => headers.map((h) => String(r[h] ?? "")))
+  const w = headers.map((h, i) => Math.max(strWidth(h), ...cells.map((c) => strWidth(c[i]))))
+  const pad = (s, n) => s + " ".repeat(Math.max(0, n - strWidth(s)))
+  const line = (cs) => cs.map((c, i) => pad(c, w[i])).join("  ").trimEnd()
+  const sep = w.map((n) => "-".repeat(n)).join("  ")
+  return [line(headers), sep, ...cells.map(line)].join("\n")
+}
+
+// 中文字符按 2 列宽算，表格在终端里才对得齐
+function strWidth(s) {
+  let n = 0
+  for (const ch of String(s)) n += /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1
+  return n
+}
+
+export function humanSize(n) {
+  const b = Number(n) || 0
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`
+  return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+export function bullet(title) {
+  return `\n== ${title} ==`
+}
+
+// ---------------------------------------------------------------- 目录遍历
+export function extOf(name) {
+  return extname(name).toLowerCase()
+}
+
+// maxDepth: 0 = 不限。exclude 是完整路径的子串（大小写不敏感）。跳过符号链接/junction。
+export function walkFiles(root, { maxDepth = 0, exclude = [], extensions = null } = {}) {
+  const out = []
+  const ex = exclude.map((s) => String(s).toLowerCase())
+  const stack = [{ dir: root, depth: 0 }]
+  while (stack.length) {
+    const { dir, depth } = stack.pop()
+    let ents
+    try {
+      ents = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      continue // 权限 / 消失的目录：跳过
+    }
+    for (const e of ents) {
+      const full = join(dir, e.name)
+      const low = full.toLowerCase()
+      if (ex.some((x) => low.includes(x))) continue
+      if (e.isSymbolicLink()) continue
+      if (e.isDirectory()) {
+        if (maxDepth === 0 || depth + 1 < maxDepth) stack.push({ dir: full, depth: depth + 1 })
+      } else if (e.isFile()) {
+        if (extensions && !extensions.includes(extOf(e.name))) continue
+        out.push(full)
+      }
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- CSV
+export function csvEscape(v) {
+  const s = String(v ?? "")
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+export function writeCsv(path, header, rows) {
+  const body = rows.map((r) => header.map((h) => csvEscape(r[h])).join(","))
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, [header.join(","), ...body].join("\n") + "\n", "utf8")
+  return rows.length
+}
+
+export function readCsv(path) {
+  const text = readFileSync(path, "utf8")
+  const rows = []
+  let row = []
+  let field = ""
+  let inQ = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"'
+          i++
+        } else inQ = false
+      } else field += c
+    } else if (c === '"') inQ = true
+    else if (c === ",") {
+      row.push(field)
+      field = ""
+    } else if (c === "\n") {
+      row.push(field)
+      rows.push(row)
+      row = []
+      field = ""
+    } else if (c !== "\r") field += c
+  }
+  if (field !== "" || row.length) {
+    row.push(field)
+    rows.push(row)
+  }
+  if (!rows.length) return []
+  const header = rows.shift()
+  return rows
+    .filter((r) => r.some((c) => c !== ""))
+    .map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])))
+}
+
+// ---------------------------------------------------------------- TSV（清单）
+// `#` 开头是注释行；第一个非注释行是表头。
+export function parseTsv(text) {
+  const lines = text.split(/\r?\n/)
+  let header = null
+  const rows = []
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
+    const t = raw.trim()
+    if (!t || t.startsWith("#")) continue
+    const cells = raw.split("\t").map((s) => s.trim())
+    if (!header) {
+      header = cells
+      continue
+    }
+    const idx = (name) => header.indexOf(name)
+    rows.push({
+      line: i + 1,
+      cells,
+      get: (name) => {
+        const k = idx(name)
+        return k < 0 ? "" : (cells[k] ?? "")
+      },
+      has: (name) => idx(name) >= 0,
+    })
+  }
+  return { header: header ?? [], rows }
+}
+
+// ---------------------------------------------------------------- Lua 字面量
+// 只为读工作区里那几份 `return { ... }` 的数据文件（profiles.lua）而写。
+// 支持：嵌套表、字符串、数字、-math.huge、`--` 与 `#` 行注释。
+function tokenizeLua(src) {
+  const t = []
+  let i = 0
+  const atLineStart = (p) => p === 0 || src[p - 1] === "\n"
+  while (i < src.length) {
+    const c = src[i]
+    if (/\s/.test(c)) {
+      i++
+      continue
+    }
+    if (c === "-" && src[i + 1] === "-") {
+      while (i < src.length && src[i] !== "\n") i++
+      continue
+    }
+    if (c === "#" && atLineStart(i)) {
+      while (i < src.length && src[i] !== "\n") i++
+      continue
+    }
+    if ("{}=,;".includes(c)) {
+      t.push({ k: c })
+      i++
+      continue
+    }
+    if (c === "-" && src.startsWith("-math.huge", i)) {
+      t.push({ k: "num", v: -Infinity })
+      i += "-math.huge".length
+      continue
+    }
+    // 负号 + 数字（`-30`）：负号必须自己吃掉，否则会被上面那句「认不出的字符跳过」丢掉
+    if (c === "-" && /[0-9.]/.test(src[i + 1] ?? "")) {
+      let s = "-"
+      i++
+      while (i < src.length && /[0-9a-fA-FxX.]/.test(src[i])) {
+        s += src[i]
+        i++
+      }
+      if (/[eE]/.test(src[i] ?? "")) {
+        s += src[i++]
+        if (/[+-]/.test(src[i] ?? "")) s += src[i++]
+        while (i < src.length && /[0-9]/.test(src[i])) s += src[i++]
+      }
+      t.push({ k: "num", v: Number(s) })
+      continue
+    }
+    if (src.startsWith("math.huge", i)) {
+      t.push({ k: "num", v: Infinity })
+      i += "math.huge".length
+      continue
+    }
+    if (c === '"' || c === "'") {
+      const q = c
+      let s = ""
+      i++
+      while (i < src.length && src[i] !== q) {
+        if (src[i] === "\\") {
+          s += src[i + 1]
+          i += 2
+        } else {
+          s += src[i]
+          i++
+        }
+      }
+      i++
+      t.push({ k: "str", v: s })
+      continue
+    }
+    if (/[0-9]/.test(c) || (c === "." && /[0-9]/.test(src[i + 1] ?? ""))) {
+      let s = ""
+      while (i < src.length && /[0-9a-fA-FxX.]/.test(src[i])) {
+        s += src[i]
+        i++
+      }
+      if (/[eE]/.test(src[i] ?? "")) {
+        s += src[i++]
+        if (/[+-]/.test(src[i] ?? "")) s += src[i++]
+        while (i < src.length && /[0-9]/.test(src[i])) s += src[i++]
+      }
+      t.push({ k: "num", v: Number(s) })
+      continue
+    }
+    if (/[A-Za-z_]/.test(c)) {
+      let s = ""
+      while (i < src.length && /[A-Za-z0-9_.]/.test(src[i])) s += src[i++]
+      t.push({ k: "id", v: s })
+      continue
+    }
+    i++ // 认不出来的字符直接跳过，别卡住
+  }
+  return t
+}
+
+function parseLuaTableText(src) {
+  const tokens = tokenizeLua(src)
+  let p = 0
+  // 开头的 `return` 跳过（它前面可能还有注释行，所以不能靠字符串替换）
+  if (tokens[0] && tokens[0].k === "id" && tokens[0].v === "return") p = 1
+  const peek = () => tokens[p]
+  const next = () => tokens[p++]
+  const expect = (k) => {
+    const tok = next()
+    if (!tok || tok.k !== k) throw new Error(`Lua 解析失败：期望 ${k}，得到 ${tok ? tok.k + ":" + (tok.v ?? "") : "文件结尾"}`)
+  }
+  function parseValue() {
+    const tok = next()
+    if (!tok) throw new Error("Lua 解析失败：意外的结尾")
+    if (tok.k === "num" || tok.k === "str") return tok.v
+    if (tok.k === "id") return tok.v
+    if (tok.k === "{") {
+      p-- // 退回，交给 parseTable
+      return parseTable()
+    }
+    throw new Error(`Lua 解析失败：意外的 token ${tok.k}`)
+  }
+  function parseTable() {
+    expect("{")
+    const obj = {}
+    const arr = []
+    let sawKey = false
+    while (peek() && peek().k !== "}") {
+      const tok = peek()
+      if ((tok.k === "str" || tok.k === "id") && tokens[p + 1] && tokens[p + 1].k === "=") {
+        next()
+        next()
+        obj[tok.v] = parseValue()
+        sawKey = true
+      } else {
+        arr.push(parseValue())
+      }
+      if (peek() && (peek().k === "," || peek().k === ";")) next()
+    }
+    expect("}")
+    if (sawKey) return obj
+    return arr.length ? arr : {}
+  }
+  return parseValue()
+}
+
+export function parseLuaFile(path) {
+  const src = readFileSync(path, "utf8")
+  return {
+    value: parseLuaTableText(src),
+    // 合法 Lua 里没有 `#` 注释：这份文件如果用了，dofile 会直接报语法错
+    hashComment: /^\s*#/m.test(src),
+  }
+}
+
+// ---------------------------------------------------------------- 杂项
+// 存在的普通文件才返回 stat，否则 null（junction / 坏路径统一当「没有」）。
+export function fileInfo(p) {
+  try {
+    const st = statSync(p)
+    return st.isFile() ? st : null
+  } catch {
+    return null
+  }
+}
+
+export function mtimeText(st) {
+  if (!st) return ""
+  const d = new Date(st.mtimeMs)
+  const z = (n) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`
+}
+
+// ---------------------------------------------------------------- Kontakt 环境探测
+export const KONTAKT_EXE_CANDIDATES = [
+  "C:\\Program Files\\Native Instruments\\Kontakt 8\\Kontakt 8.exe",
+  "C:\\Program Files\\Native Instruments\\Kontakt 7\\Kontakt 7.exe",
+]
+
+// DeveloperFeatures: 0 = 关（脚本静默不执行）1 = 开。读不到返回 null。
+export function readDeveloperFeatures() {
+  const key = "HKCU\\Software\\Native Instruments\\Kontakt 8"
+  for (const extra of [["/reg:64"], []]) {
+    try {
+      const out = execFileSync("reg.exe", ["query", key, "/v", "DeveloperFeatures", ...extra], {
+        encoding: "utf8",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      const m = /DeveloperFeatures\s+REG_DWORD\s+0x([0-9a-fA-F]+)/.exec(out)
+      if (m) return { value: parseInt(m[1], 16), key }
+    } catch {
+      /* 试下一档 */
+    }
+  }
+  return null
+}
+
+export function listKontaktProcesses() {
+  try {
+    const out = execFileSync("tasklist.exe", ["/NH", "/FO", "CSV"], { encoding: "utf8", windowsHide: true })
+    return out
+      .split(/\r?\n/)
+      .map((l) => /^"([^"]+)","(\d+)"/.exec(l.trim()))
+      .filter((m) => m && /kontakt/i.test(m[1]))
+      .map((m) => `${m[1]} (pid ${m[2]})`)
+  } catch {
+    return []
+  }
+}
+

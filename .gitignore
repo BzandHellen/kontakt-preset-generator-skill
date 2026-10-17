@@ -8,13 +8,6 @@ config/libraries.json
 # personal habits / preferences — local only
 references/user-habits.md
 
-# local outputs
-generated/
-Generated/
-jobs/
-Reports/*
-!Reports/.gitkeep
-
 *.tmp
 *.tmp.json
 *.log

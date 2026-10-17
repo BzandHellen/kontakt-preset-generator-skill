@@ -6,6 +6,9 @@
 // 解析顺序：工具参数里的 roots > config/libraries.json > 都没有时只探测候选并回给用户确认
 // （永远不静默扫全盘）。
 {
+  // 工作区：清单 / profiles / 产物 / 报告 都在那边。不给就用默认值或 $KONTAKT_WORKSPACE。
+  "workspace": "C:\\VEPRO\\Kontakt Patch",
+
   // 按顺序扫；同一个库出现在多个根下时，先出现的胜出
   "scan_roots": [
     { "path": "E:\\Kontakt Library" },
