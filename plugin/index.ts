@@ -496,6 +496,36 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "snapshot_diff",
+        description:
+          "两份 `.nksn` 的**对齐感知差分**（只读，不需要 Kontakt）—— 用来**反推库内参数**（不是解密）。\n" +
+          "原理：首 4 字节是整个文件长度；偏移 24..40 每次保存都不同（疑似 nonce/校验）；**本体是对齐的**，" +
+          "两份之间只差几字节的增删 + 若干值 → 必须先对齐再比，否则错位会给出「99% 都不同」的假象。\n" +
+          "输出：对齐块内的**值差异**（偏移/字节/float 解释/附近的明文名）与**增删段**。\n" +
+          "用法：同一个 patch **只改一个开关**各存一份 → 差异那块就是那个参数的存处；数值型参数（如某麦 dB）最好。",
+        input: {
+          type: "object",
+          properties: {
+            a: { type: "string", description: "第一份 .nksn" },
+            b: { type: "string", description: "第二份 .nksn" },
+            file: { type: "array", items: { type: "string" }, description: "或者给多份（第一份当基准）" },
+            anchor: { type: "number", description: "锚间隔，默认 128" },
+            needle: { type: "number", description: "锚长度，默认 40" },
+            maxRegions: { type: "number", description: "最多列多少处差异，默认 40" },
+            context: { type: "number", description: "找明文时的上下文半径，默认 96" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["anchor", "needle", "context"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("a", i.a), ...opt("b", i.b), ...opt("file", i.file), ...opt("max-regions", i.maxRegions))
+          return text(await run("snapshot-diff.mjs", args, 300_000, 200_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
