@@ -189,29 +189,25 @@ for (let k = 1; k < L.length; k++) {
   console.log(`对齐块内的**值差异**：${diffs.length} 处　增删段：${shifts.length} 处`)
 
   if (diffs.length) {
+    const small = diffs.filter((r) => r.to - r.a > 0 && r.to - r.a <= 64)
     const big = diffs.filter((r) => r.to - r.a > 64)
-    const small = diffs.filter((r) => r.to - r.a <= 64)
-    console.log(
-      "\n" +
-        tableText(
-          ["#", "偏移(A)", "长度", "A 的字节", "B 的字节", "数值解释(A)", "数值解释(B)", "附近的明文（A）"],
-          small.slice(0, MAXREG).map((r, i) => ({
-            "#": i + 1,
-            偏移: `0x${r.a.toString(16)}`,
-            长度: `${r.to - r.a}B`,
-            "A 的字节": hexOf(A.buf, r.a, r.to),
-            "B 的字节": r.b === undefined ? "" : hexOf(B.buf, r.b, r.b + (r.to - r.a)),
-            "数值解释(A)": interpret(A.buf, r.a, r.to - r.a),
-            "数值解释(B)": r.b === undefined ? "" : interpret(B.buf, r.b, r.to - r.a),
-            "附近的明文（A）": asciiList(A.buf, r.a, r.to).join(" · ").slice(0, 60),
-          })),
-        ),
-    )
-    if (small.length > MAXREG) console.log(`… 小差异还有 ${small.length - MAXREG} 处`)
+    console.log(`\n**值差异**（逐行，最多列 ${MAXREG} 条）：`)
+    for (const r of small.slice(0, MAXREG)) {
+      const len = r.to - r.a
+      const aHex = hexOf(A.buf, r.a, r.to, len)
+      const bHex = r.b === undefined ? "?" : hexOf(B.buf, r.b, r.b + len, len)
+      console.log(
+        `  A@0x${r.a.toString(16)} (${len}B)  A=${aHex}  B=${bHex}` +
+          `  ${interpret(A.buf, r.a, len)}` +
+          (r.b === undefined ? "" : `  |  ${interpret(B.buf, r.b, len)}`) +
+          `  ⟵ ${asciiList(A.buf, r.a, r.to, 4).join(" · ").slice(0, 60)}`,
+      )
+    }
+    if (small.length > MAXREG) console.log(`  … 小差异还有 ${small.length - MAXREG} 处`)
     if (big.length) {
-      console.log(`\n另有 ${big.length} 处**大段差异**（>64B，通常是整块结构变了，不是单个值）：`)
+      console.log(`\n另有 ${big.length} 处**大段差异**（>64B，整块结构变了，不是单个值）：`)
       for (const r of big.slice(0, 10)) {
-        console.log(`  A@0x${r.a.toString(16)}  ${r.to - r.a} B 字节　附近的明文：${asciiList(A.buf, r.a, r.to).join(" · ").slice(0, 70)}`)
+        console.log(`  A@0x${r.a.toString(16)}  ${r.to - r.a} B  ⟵ ${asciiList(A.buf, r.a, r.to, 4).join(" · ").slice(0, 70)}`)
       }
       if (big.length > 10) console.log(`  … 还有 ${big.length - 10} 处`)
     }
