@@ -526,6 +526,35 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "snapshot_lookup",
+        description:
+          "把 `.nksn` 当**可读的参数表**来查（只读，不需要 Kontakt，秒级）。\n" +
+          "① `find=\"mic,xfade,legato\"`：列出名字里含这些词的明文串 + 它后面那串字节 + 候选数值。\n" +
+          "② `value=[-6,-12]`：把数值按 f32/f64/i32/i16/十进制串各编码一遍搜位置，报出前后最近的明文名。\n" +
+          "⚠️ 实测：**名字是明文，但 CAPSULE 那种 mixer 数值不是明文数值**（搜 -15 一个都搜不到）——\n" +
+          "所以「读值 / 改值」对这类参数不成立；定位「哪块变了、那块叫什么」用 snapshot_diff。",
+        input: {
+          type: "object",
+          properties: {
+            file: { type: "array", items: { type: "string" }, description: "要查的 .nksn（可多个）" },
+            find: { type: "string", description: "按名字找，逗号分隔，如 mic,xfade,legato" },
+            value: { type: "array", items: { type: "number" }, description: "按值找（各编码都试一遍）" },
+            window: { type: "number", description: "名字与值之间允许的最大距离，默认 256" },
+            max: { type: "number", description: "每类最多列多少条，默认 40" },
+          },
+          required: ["file"],
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["find", "window", "max"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("file", i.file), ...opt("value", i.value))
+          return text(await run("snapshot-lookup.mjs", args, 120_000, 120_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
