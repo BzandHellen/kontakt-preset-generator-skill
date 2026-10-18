@@ -238,6 +238,30 @@ function M.apply_group_mics(idx, spec, aliases)
   return hits, writes
 end
 
+-- ---------------------------------------------------------------- 等文件真正落盘
+-- ⚠️ `save_multi` 是**异步**写盘：紧接着 `get_file_info` 常常还是 nil（大 multi 更明显，
+--    例如 5 个不同库的 multi 要 ~1 秒），会在报告里变成"假 FAIL —— 文件没写出来"，
+--    并连带跳过重载回读（于是整条链看似失败，其实产物是好的）。
+--    Kontakt 的 Lua 没有 sleep → 用 os.time() 做秒级等待。
+function M.wait_file(path, seconds, label)
+  seconds = seconds or 20
+  local t_end = os.time() + seconds
+  local info, tries = nil, 0
+  while true do
+    local ok, i = pcall(Kontakt.get_file_info, path)
+    tries = tries + 1
+    if ok and i ~= nil then info = i break end
+    if os.time() >= t_end then break end
+    local t0 = os.time()
+    while os.time() - t0 < 1 do end
+  end
+  if label ~= nil then
+    if info ~= nil then M.log("[ OK ] %s：文件已落盘（查了 %d 次）", label, tries)
+    else M.log("[FAIL] %s：等了 %ds 文件仍未出现 -> %s", label, seconds, path) end
+  end
+  return info, tries
+end
+
 -- ---------------------------------------------------------------- 脚本适配器（对抗"库复位"的通用招）
 -- 为什么：有些库在载入时把 group 音量重写回默认（OT 是 on init + on ui_update；其它库类似），
 -- 我们直接写 group 音量会被覆盖。往**空脚本槽**注入一小段 KSP，它每次载入都会把值再写一遍

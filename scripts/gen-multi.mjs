@@ -4,7 +4,7 @@
 // 一条 multi 一个 Kontakt 进程（一个 Lua 脚本 = 一次进程）。
 // 默认 dry-run 之外会真的启动 Kontakt；`--dry-run` 只写 job.lua 并打印计划。
 
-import { existsSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
   EXIT,
@@ -29,6 +29,21 @@ const ws = workspaceDir(args)
 const outDir = resolve(args.get("out-dir") || join(ws, "Generated"))
 const repDir = reportsDir(args)
 const timeoutS = args.num("timeout", 300)
+
+// 产物名 → ASCII 文件名。
+// ⛔ save_multi / load_multi 对**含非 ASCII 的路径会静默失败**（2026-10-18 实测：同一份 5 库 multi，
+//    中文名连查三次、退出后磁盘上都没有，而 pcall=true 且无任何报错；换成 ASCII 立刻写出）
+//    → Lua 侧一律用 ASCII 临时名，作业跑完由 Node 改名成最终名。
+function toAsciiNkmName(multi) {
+  const keep = String(multi)
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+  let h = 0
+  for (const ch of String(multi)) h = (h * 31 + ch.codePointAt(0)) % 0xffffff
+  return `${keep || "multi"}__${h.toString(36)}.nkm`
+}
 
 let plan
 try {
@@ -97,11 +112,17 @@ let failTotal = 0
 
 for (const m of plan.multis) {
   const outNkm = join(outDir, `${m.multi}.nkm`).replace(/\\/g, "/")
+  // ⛔ save_multi / load_multi 对**含非 ASCII 的路径会静默失败**（2026-10-18 实测：同一份 5 库 multi，
+  //    中文名 `五库测试.nkm` 连查三次+退出后磁盘上都没有（pcall 依然 true、无任何报错），
+  //    把名字换成纯 ASCII 就**立刻**写出 393 KB）。→ Lua 侧一律用 ASCII 临时名，
+  //    作业跑完由 Node 改名成最终名（Node 的 rename 没有这个限制）。
+  const outTmp = join(outDir, toAsciiNkmName(m.multi)).replace(/\\/g, "/")
   const report = join(repDir, `gen-${m.multi}-${stampText}.txt`).replace(/\\/g, "/")
   const job = {
     multi: m.multi,
     manifest: plan.manifest.replace(/\\/g, "/"),
-    out_nkm: outNkm,
+    out_nkm: outTmp,
+    final_nkm: outNkm,
     report,
     save_mode: args.get("save-mode", "patch"),
     adapter: args.get("adapter", "auto"),
@@ -170,6 +191,17 @@ for (const m of plan.multis) {
     for (const l of tail) console.log(`  ${l}`)
   }
   console.log(`报告：${res.reportPath ?? "（没找到）"}　OK ${res.oks} / FAIL ${res.fails}`)
+
+  // 把 ASCII 临时产物改名成最终（可能带中文）的名字
+  if (outTmp !== outNkm) {
+    try {
+      if (existsSync(outNkm)) rmSync(outNkm, { force: true })
+      renameSync(outTmp, outNkm)
+      console.log(`产物改名：${outTmp.split("/").pop()} → ${outNkm.split("/").pop()}（save_multi 不吃非 ASCII 路径）`)
+    } catch (e) {
+      console.log(`⚠ 产物没能改名（仍在临时名下）：${outTmp}\n   ${e.message}`)
+    }
+  }
 
   // 作业里的 [FAIL] 行
   const repFails = res.reportText.split(/\r?\n/).filter((l) => /\[\s*FAIL\s*\]/.test(l))

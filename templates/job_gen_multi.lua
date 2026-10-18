@@ -10,7 +10,10 @@ local JOB = @JOB@
 K.log("==== 生成 multi：%s ====", JOB.multi)
 K.log("time: %s   Kontakt %s", os.date("%Y-%m-%d %H:%M:%S"), tostring(Kontakt.version))
 K.log("清单：%s", JOB.manifest or "（直接给的行）")
-K.log("产物：%s", JOB.out_nkm)
+K.log("产物：%s", JOB.final_nkm or JOB.out_nkm)
+if JOB.final_nkm and JOB.final_nkm ~= JOB.out_nkm then
+  K.log("      Lua 侧存到 ASCII 临时名 %s（save_multi 不吃非 ASCII 路径），跑完由 Node 改名", JOB.out_nkm)
+end
 
 -- ---------------------------------------------------------------- A1 建空 multi
 K.try("reset_multi", Kontakt.reset_multi)
@@ -104,11 +107,12 @@ K.log("\n---- 脚本适配器（往空槽注入、对抗库复位）----")
 for _, line in ipairs(K.machine_block({ "slot", "script_slot", "groups", "src_len" }, adapters, "ADAPTERS")) do K.log(line) end
 
 K.log("\n---- 存盘 ----")
-local saved = K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })
--- ⚠️ get_file_info 对**不存在的文件会直接抛错**（不是返回 nil）→ 一定要 pcall 包住，
+K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })
+-- ⚠️ get_file_info 对**不存在的文件会直接抛错**（不是返回 nil）→ 一律 pcall 包住，
 --    否则"存盘失败"会连带把整个作业打死：报告写不出来、os.exit 不执行、Kontakt 干挂在那儿。
-local okinfo, info = pcall(Kontakt.get_file_info, JOB.out_nkm)
-if not okinfo then info = nil end
+-- ⚠️ save_multi **异步**落盘 → 必须等（见 K.wait_file），否则会假 FAIL 并跳过重载回读。
+local info = K.wait_file(JOB.out_nkm, 20, "save_multi")
+local saved = info ~= nil
 if info ~= nil then
   local bits = {}
   if type(info) == "table" then
@@ -118,8 +122,6 @@ if info ~= nil then
     bits[1] = tostring(info)
   end
   K.log("[ OK ] 文件已写出 -> %s  %s", JOB.out_nkm, table.concat(bits, "  "))
-else
-  K.log("[FAIL] 文件没写出来 -> %s", JOB.out_nkm)
 end
 
 -- ---------------------------------------------------------------- A6 重载 + 回读

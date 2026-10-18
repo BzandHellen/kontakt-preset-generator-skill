@@ -51,8 +51,9 @@ for i, p in ipairs(JOB.patches) do
     --    而旧文件里恰好也是 −12（上次测试写的）→ 判成"能存住"，**假 PASS**（2026-10-18 踩过）。
     os.remove(out)
     local savedOk = K.try("save_multi", Kontakt.save_multi, out, { mode = "patch" })
-    local okf, info = pcall(Kontakt.get_file_info, out)
-    local fileNew = okf and info ~= nil
+    -- ⚠️ save_multi 异步落盘 → 用 K.wait_file 等（否则会假 FAIL）
+    local info = K.wait_file(out, 20)
+    local fileNew = info ~= nil
     K.log("   存盘：save=%s  文件=%s", tostring(savedOk), fileNew and "有（新写的）" or "没有")
 
     if not (savedOk and fileNew) then
