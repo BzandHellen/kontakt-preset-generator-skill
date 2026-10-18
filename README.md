@@ -27,7 +27,7 @@
 | `scripts/` | Node 脚本（`env`/`db-build`/`db-query`/`manifest-lint`/`profiles`/`reports`/`run-lua`/`gen-multi`/`inspect-multi`/`verify-multi`/`probe-library`/`apply-snapshot`/`learn-mic`/`snapshot` + `lib`/`job`/`plan`/`compare`；`kontakt_lib.lua` 是 Lua 侧公共库） |
 | `templates/` | Lua 作业模板（`job_gen_multi` / `job_inspect_multi` / `job_verify_multi` / `job_probe_library` / `job_apply_snapshot` / `job_snapshot_visual` / `job_learn_mic`），配置由 Node 注入 |
 | `config/` | 本机配置：库扫描根（真文件 gitignore，只留 `.example.jsonc`） |
-| `data/` | 扫库生成的 patch 索引（可重建，不进 git） |
+| `data/` | 扫库生成的 patch 索引（可重建，不进 git）+ ★ **本机成果库 `findings.json`**（库类型/家族/快照/已定位参数；形状见 `findings.example.json`，由 `kontakt_probe_library` 自动写、`kontakt_findings` 读写） |
 
 配置 `profiles.json` **在工作区**（`<工作区>\manifest\profiles.json`）—— 它是你的数据，不进这个仓库。
 从旧的 `profiles.lua` 迁过来用 `kontakt_migrate_profiles`（或 `node scripts/migrate-profiles.mjs`）。

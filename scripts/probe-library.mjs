@@ -12,11 +12,13 @@ import {
   EXIT,
   bullet,
   dbPath,
+  deriveLibraryKey,
   launchKontakt,
   parseArgs,
   parseMachineBlock,
   preflight,
   readCsv,
+  recordFindings,
   reportsDir,
   tableText,
   workspaceDir,
@@ -177,6 +179,28 @@ if (mode === "structure") {
     const withStart = groups.filter((r) => r.has_start === "yes")
     const velSplit = groups.filter((r) => r.vel_buckets !== "" && Number(r.vel_buckets) > 1)
     perPatch.push({ file: job.patches[k - 1], scripts, groups, nProt, withStart, velSplit })
+  }
+
+  // ★ 自动写进成果库（data/findings.json）—— 不用再手抄进文档
+  try {
+    const first = perPatch.find((p) => p.groups.length) ?? perPatch[0]
+    if (first) {
+      const scriptNames = [...new Set(first.scripts.map((r) => String(r.name).replace(/\(protected\)$/, "")))]
+      const key = args.get("library") || deriveLibraryKey(first.file)
+      const wrote = recordFindings(key, {
+        paths: [...new Set(perPatch.map((p) => first.file.slice(0, first.file.length - first.file.split(/[\\/]/).pop().length - 1)))],
+        kind: first.nProt > 0 ? "player-encrypted" : "unencrypted",
+        scripts: { count: first.scripts.length, protected: first.nProt, names: scriptNames },
+        groups: first.groups.length,
+        native_start_conditions: first.withStart.length,
+        velocity_split_groups: first.velSplit.length,
+        probed_from: first.file,
+        probed_at: new Date().toISOString().slice(0, 10)
+      })
+      console.log(`\n[ OK ] 已写进成果库：${wrote}（data/findings.json）`)
+    }
+  } catch (e) {
+    console.log(`\n[WARN] 写成果库失败（不影响本次结果）：${e.message}`)
   }
 
   console.log(`\n---- 逐 patch 判据`)

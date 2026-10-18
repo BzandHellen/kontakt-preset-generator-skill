@@ -555,6 +555,34 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "findings",
+        description:
+          "本机探测**成果库**（`data/findings.json`）：每个库「是什么类型、属于哪条麦克风路、有哪些 patch 家族、" +
+          "有哪些快照、快照里已定位的参数」。\n" +
+          "`library=\"CSS\"` 看某个库（子串匹配）；不带参数列全部；" +
+          "`library=\"<名>\"` + `merge='{\"key\":\"value\"}'` 深度合并写回（先备份 .bak）。\n" +
+          "`probe_library(structure:true)` 会自动写进这里，所以认库的结论不用手抄。\n" +
+          "人读版在工作区 `docs\\Kontakt-库档案.md`。",
+        input: {
+          type: "object",
+          properties: {
+            library: { type: "string", description: "库名（子串匹配）；写回时不存在则新建" },
+            merge: { type: "string", description: "要合并进去的 JSON 片段" },
+            mergeFile: { type: "string", description: "或者给一个 JSON 文件路径" },
+            json: { type: "boolean", description: "原样输出整个成果库" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["library", "merge"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("merge-file", i.mergeFile), ...opt("json", i.json))
+          return text(await run("findings.mjs", args, 60_000, 200_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +

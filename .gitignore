@@ -1,6 +1,8 @@
 # extracted from locally installed (licensed) libraries — regenerable, machine-specific
 data/*
 !data/README.md
+!data/findings.example.json
+# findings.json 是本机探测成果库（含你的库/快照路径）→ 故意不进 git；形状见 findings.example.json
 
 # machine-specific config (library scan roots) — local only
 config/libraries.json

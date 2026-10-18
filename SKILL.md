@@ -38,6 +38,9 @@ description: >-
 | `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**加密库的麦克风唯一通路**）；`visual=true` + `save=<路径>` 产出可打开的检查 multi |
 | `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印片段；`write=true` 直接写回 `profiles.json`（先备份 `.bak`） |
 | `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
+| `kontakt_snapshot_diff` | 否 | `.nksn` **对齐感知差分**：找"哪几个字节变了 + 旁边叫什么"（反推参数用）；只读 |
+| `kontakt_snapshot_lookup` | 否 | `.nksn` 按**名字**或按**值**查（秒级）；只读 |
+| `kontakt_findings` | 否 | ★ **本机成果库** `data\findings.json`：每个库的类型/家族/快照/已定位参数。`probe_library --structure` 会自动往里写 |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
 ## 核心事实（决定一切设计）

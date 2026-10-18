@@ -3,7 +3,7 @@
 // 参数解析 / 路径 / 配置 / CSV / TSV / Lua 字面量读取 / 目录遍历 / 文本输出。
 // 只跑 Node 标准库，不依赖 PowerShell（见 README「为什么脚本是 .mjs」）。
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, copyFileSync } from "node:fs"
 import { dirname, extname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { execFileSync, spawn } from "node:child_process"
@@ -404,6 +404,62 @@ export function parseLuaFile(path) {
     // 合法 Lua 里没有 `#` 注释：这份文件如果用了，dofile 会直接报语法错
     hashComment: /^\s*#/m.test(src),
   }
+}
+
+// ---------------------------------------------------------------- 本机成果库（findings）
+// 存"这个库到底是什么"：类型 / 脚本 / group / 原生 start 条件 / 音量能否存 / 家族 / 快照 / 已定位参数。
+export const FINDINGS_PATH = join(SKILL_DATA, "findings.json")
+
+export function loadFindings() {
+  if (!existsSync(FINDINGS_PATH)) return { schema: 1, updated: "", global: {}, libraries: {} }
+  const db = JSON.parse(readFileSync(FINDINGS_PATH, "utf8"))
+  db.libraries = db.libraries ?? {}
+  return db
+}
+
+export function saveFindings(db) {
+  db.updated = new Date().toISOString().slice(0, 10)
+  if (existsSync(FINDINGS_PATH)) copyFileSync(FINDINGS_PATH, `${FINDINGS_PATH}.bak`)
+  writeFileSync(FINDINGS_PATH, JSON.stringify(db, null, 2) + "\n", "utf8")
+}
+
+export function deepMergeInto(base, patch) {
+  if (Array.isArray(patch)) return patch
+  if (patch && typeof patch === "object") {
+    const out = { ...(base ?? {}) }
+    for (const [k, v] of Object.entries(patch)) out[k] = deepMergeInto(base?.[k], v)
+    return out
+  }
+  return patch
+}
+
+// 找一个已存在的条目名（"CSS" ↔ "Cinematic Studio Strings" 这种要先能对上）
+export function matchLibraryKey(db, name) {
+  const keys = Object.keys(db.libraries ?? {})
+  const n = String(name).toLowerCase().replace(/[\s_-]+/g, "")
+  const hit = keys.find((k) => {
+    const kk = k.toLowerCase().replace(/[\s_-]+/g, "")
+    return kk === n || kk.includes(n) || n.includes(kk)
+  })
+  return hit ?? null
+}
+
+// 从 patch 路径推库名：取 "Kontakt Library" / "Library" / "Channel Sets" 之后那一段
+export function deriveLibraryKey(p) {
+  const parts = String(p).replace(/\\/g, "/").split("/").filter(Boolean)
+  const i = parts.findIndex((s) => /^(Kontakt Library|Library|Channel Sets)$/i.test(s))
+  if (i >= 0 && parts[i + 1]) return parts[i + 1]
+  if (parts.length >= 2) return parts[parts.length - 2]
+  return "unknown"
+}
+
+export function recordFindings(name, patch) {
+  const db = loadFindings()
+  const key = matchLibraryKey(db, name) ?? name
+  db.libraries[key] = deepMergeInto(db.libraries[key] ?? {}, patch)
+  db.libraries[key].updated = new Date().toISOString().slice(0, 10)
+  saveFindings(db)
+  return key
 }
 
 // ---------------------------------------------------------------- 杂项

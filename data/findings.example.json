@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "updated": "YYYY-MM-DD",
+  "note": "形状示例。真正的成果库是同目录的 findings.json（**本机私有、不进 git**，含你的库/快照路径）。由 kontakt_findings 工具读写；probe_library(structure:true) 会自动往里写。人读版在工作区 docs\\Kontakt-库档案.md。",
+
+  "global": {
+    "kontakt": { "version": "8.9.0", "exe": "C:\\…\\Kontakt 8.exe", "developer_features": 1 },
+    "exit": { "code": 3221225477, "cause": "关机阶段内存解锁失败", "judge": "看报告里有没有 ==== end ====" },
+    "agent_launch": { "gui_window": false, "note": "agent 启动的 Kontakt 没有窗口" },
+    "snapshot_container": {
+      "encrypted": false,
+      "length_field": "u32LE @0",
+      "mutable_16B_at_24": "每次保存都不同（疑似 nonce/校验）",
+      "body_alignment": "本体对齐，差量小",
+      "param_names": "明文",
+      "param_values": "不是明文数值（1 字节级、编码过）"
+    }
+  },
+
+  "libraries": {
+    "<库名（与 kontakt-patches.csv 的 Library 列一致）>": {
+      "paths": ["C:\\…\\<库根>"],
+      "kind": "unencrypted | player-encrypted",
+      "scripts": { "count": 5, "protected": 5, "names": ["n-a.m", "special_scripts"] },
+      "groups": 123,
+      "zones": 4567,
+      "native_start_conditions": 0,
+      "velocity_split_groups": 0,
+      "group_volume_persists": true,
+      "mic_aliases": { "CLOSE": ["CLOSE"], "SURROUND": ["SURROUND", "SRD"] },
+      "mic_name_shape": "纯名 / 前缀 / 后缀 / 只在复合名里",
+      "structure": {
+        "mic_variant_dirs": ["_Advanced_", "_Alt Mics_"],
+        "technique_dirs": ["…"],
+        "note": "这个库目录结构上有什么不寻常的"
+      },
+      "notes": ["一行一条，可执行的结论（不是历史）"],
+      "snapshots": [
+        {
+          "path": "C:\\…\\<乐器>\\<名>.nksn",
+          "from_patch": "<快照出自哪个 patch>",
+          "content": "它改了什么（麦克风比例 / 键位 / xfade…）",
+          "family": "<patch 家族 —— 快照只对同家族可靠>",
+          "verified": ["跨 patch 生效（人眼）"],
+          "registered_as": "mic_snapshots.<token>",
+          "located_bytes": [{ "offset": "0x…", "a": "0x71", "b": "0x52", "near": ["明文参数名"] }]
+        }
+      ],
+      "probed_from": "<探测用的那个 .nki>",
+      "probed_at": "YYYY-MM-DD"
+    }
+  }
+}
