@@ -256,6 +256,12 @@ export default Plugin.define({
             multi: { type: "array", items: { type: "string" }, description: "只做这些 multi（默认全部）" },
             outDir: { type: "string", description: "产物目录，默认 <工作区>\\Generated" },
             saveMode: { type: "string", description: "patch（默认）| monolith | samples" },
+            adapter: {
+              type: "string",
+              description:
+                "auto（默认）= 若该乐器有空脚本槽就注入 MIC-ADAPTER（一小段 KSP，载入时重写 group 音量，对抗" +
+                "「库把 group 音量复位」的库，如 Strezov 五套）；off = 不注入。OT 全系槽受保护，会自动跳过。",
+            },
             planOnly: { type: "boolean", description: "只出计划" },
             dryRun: { type: "boolean", description: "写 job.lua 但不启动 Kontakt" },
             timeout: { type: "number", description: "秒，默认 300" },
@@ -269,7 +275,7 @@ export default Plugin.define({
           const i = input as Record<string, unknown>
           const args = ["manifest", "profiles", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
           args.push(...opt("multi", i.multi), ...opt("out-dir", i.outDir), ...opt("save-mode", i.saveMode), ...opt("timeout", i.timeout))
-          args.push(...opt("plan-only", i.planOnly), ...opt("dry-run", i.dryRun))
+          args.push(...opt("adapter", i.adapter), ...opt("plan-only", i.planOnly), ...opt("dry-run", i.dryRun))
           return text(await run("gen-multi.mjs", args, 900_000, 120_000))
         },
       })

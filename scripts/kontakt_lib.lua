@@ -201,13 +201,13 @@ function M.spec_value(spec, key)
   return nil
 end
 
--- 写 group 音量（未加密库这条路）
+-- 写 group 音量（未加密库这条路）；返回 (hits, writes)，writes = { {g=组号, v=dB}, ... }
 function M.apply_group_mics(idx, spec, aliases)
   local keys, others = M.split_spec(spec)
   local cands = M.build_candidates(keys, aliases)
   local ok, ng = pcall(Kontakt.get_num_groups, idx)
-  if not ok or type(ng) ~= "number" then return { err = "get_num_groups 失败" } end
-  local hits = {}
+  if not ok or type(ng) ~= "number" then return { err = "get_num_groups 失败" }, {} end
+  local hits, writes = {}, {}
   for g = 0, ng - 1 do
     local o, nm = pcall(Kontakt.get_group_name, idx, g)
     if o and nm then
@@ -224,6 +224,7 @@ function M.apply_group_mics(idx, spec, aliases)
         local h = hits[key]
         if h == nil then h = { key = key, how = how, n = 0 }; hits[key] = h end
         h.n = h.n + 1
+        if val ~= -math.huge then writes[#writes + 1] = { g = g, v = val } end
       end
     end
   end
@@ -234,7 +235,82 @@ function M.apply_group_mics(idx, spec, aliases)
     M.log("   写入 group：%-12s (%s)  %d 个", h.key, h.how, h.n)
   end
   if #list == 0 then M.log("   ⚠ 一个 group 都没匹配上 —— 检查 mic 别名表") end
-  return hits
+  return hits, writes
+end
+
+-- ---------------------------------------------------------------- 脚本适配器（对抗"库复位"的通用招）
+-- 为什么：有些库在载入时把 group 音量重写回默认（OT 是 on init + on ui_update；其它库类似），
+-- 我们直接写 group 音量会被覆盖。往**空脚本槽**注入一小段 KSP，它每次载入都会把值再写一遍
+-- —— 而且它随 .nkm 存盘、跟着 multi 走（Strezov 五套实测有效；OT 全系槽受保护，注入不了）。
+-- ⚠️ KSP 的四条硬规矩（踩过）：① 顶层 declare 不能带初值 ② on init 里不能 call 用户函数
+--    ③ function 必须在调用点之前 ④ `{ }` 注释必须闭合。
+
+-- 找一个可写的空槽（名字为空或 <empty> 且非 protected）；没有就返回 nil
+function M.free_slot(idx)
+  local maxs = (type(Kontakt.max_num_scripts) == "number" and Kontakt.max_num_scripts) or 5
+  local best = nil
+  for s = 0, maxs - 1 do
+    local o, nm = pcall(Kontakt.get_instrument_script_name, idx, s)
+    local _, pr = pcall(Kontakt.is_instrument_script_protected, idx, s)
+    local name = (o and nm) and tostring(nm) or ""
+    if (name == "" or name == "<empty>") and not pr then best = s end
+  end
+  return best
+end
+
+-- dB → KSP $ENGINE_PAR_VOLUME 的 0..1000000 刻度（实测是立方刻度：630000 = 0 dB）
+function M.dB_to_unit(db)
+  local n = M.tonum(db)
+  if n == nil then return 0 end
+  local v = 630000 * (10 ^ (n / 60))
+  if v > 1000000 then v = 1000000 end
+  if v < 0 then v = 0 end
+  return math.floor(v + 0.5)
+end
+
+-- 注入适配器：writes = { {g=组号, v=dB}, ... }；返回 (槽号, 源码字节数) 或 (nil, 原因)
+function M.inject_mic_adapter(idx, writes, name)
+  if writes == nil or #writes == 0 then return nil, "没有要写的 group" end
+  local slot = M.free_slot(idx)
+  if slot == nil then return nil, "没有可写的空脚本槽（都被占用或受保护）" end
+  local gs, vs = {}, {}
+  for _, w in ipairs(writes) do
+    gs[#gs + 1] = w.g
+    vs[#vs + 1] = M.dB_to_unit(w.v)
+  end
+  local n = #gs
+  local src = table.concat({
+    "{ MIC-ADAPTER by kontakt-preset-generator (generated) }",
+    "on init",
+    "  declare %ma_g[" .. n .. "] := (" .. table.concat(gs, ",") .. ")",
+    "  declare %ma_v[" .. n .. "] := (" .. table.concat(vs, ",") .. ")",
+    "  declare $ma_k",
+    "  $ma_k := 0",
+    "  while ($ma_k < " .. n .. ")",
+    "    set_engine_par($ENGINE_PAR_VOLUME, %ma_v[$ma_k], %ma_g[$ma_k], -1, -1)",
+    "    inc($ma_k)",
+    "  end while",
+    "end on",
+    "function ma_apply",
+    "  $ma_k := 0",
+    "  while ($ma_k < " .. n .. ")",
+    "    if (get_engine_par($ENGINE_PAR_VOLUME, %ma_g[$ma_k], -1, -1) # %ma_v[$ma_k])",
+    "      set_engine_par($ENGINE_PAR_VOLUME, %ma_v[$ma_k], %ma_g[$ma_k], -1, -1)",
+    "    end if",
+    "    inc($ma_k)",
+    "  end while",
+    "end function",
+    "on persistence_changed",
+    "  call ma_apply",
+    "end on",
+    "on ui_update",
+    "  call ma_apply",
+    "end on",
+  }, "\n") .. "\n"
+  local ok, err = pcall(Kontakt.set_instrument_script_source, idx, slot, src)
+  if not ok then return nil, "注入失败：" .. tostring(err) end
+  if name ~= nil then pcall(Kontakt.set_instrument_script_name, idx, slot, name) end
+  return slot, #src
 end
 
 -- 读某个麦克风名下所有 group 的音量区间（aliases：标准名 → 实际 group 名）

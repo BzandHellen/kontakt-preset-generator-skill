@@ -33,6 +33,7 @@ end
 -- ---------------------------------------------------------------- A3 逐槽设参数
 -- 顺序：先 snapshot（它承载库自己 UI 的状态，会连带改一些东西），再设 header 上的参数。
 local libs = {}
+local adapters = {}
 local baselines = {} -- [i] = { [MIC] = { min=, max= } }  写之前读到的基线（判断"库复位"用）
 for i, s in ipairs(JOB.slots) do
   local idx = placed[i]
@@ -68,7 +69,18 @@ for i, s in ipairs(JOB.slots) do
         baselines[i][K.upper(k)] = { min = a.min, max = a.max }
         K.log("     写之前 %-10s n=%3d  min=%s  max=%s", K.upper(k), a.n, tostring(a.min), tostring(a.max))
       end
-      K.apply_group_mics(idx, s.mic.spec, s.mic.aliases)
+      local hits, writes = K.apply_group_mics(idx, s.mic.spec, s.mic.aliases)
+      -- 脚本适配器：往空脚本槽注入一小段 KSP，让这些值在**每次载入**时再写一遍
+      -- （对抗"库把 group 音量复位"；OT 全系槽受保护 → 自动跳过并记 WARN）
+      if JOB.adapter ~= "off" and writes and #writes > 0 then
+        local slot, info = K.inject_mic_adapter(idx, writes, "MIC-ADAPTER")
+        if slot then
+          K.log("  [ OK ] 已注入脚本适配器 MIC-ADAPTER 到槽 %d（%d 个 group / %s 字节）—— 载入时自动重写这些音量", slot, #writes, tostring(info))
+          adapters[#adapters + 1] = { slot = s.slot, script_slot = slot, groups = #writes, src_len = info }
+        else
+          K.log("  [WARN] 脚本适配器没装上：%s（该库 group 音量若被复位，只能靠 snapshot）", tostring(info))
+        end
+      end
     elseif s.mic and s.mic.mode == "snapshot" then
       K.log("  —— 麦克风：走 snapshot（加密库，group 音量写不住）——")
     elseif s.mic and s.mic.mode == "skipped" then
@@ -87,6 +99,9 @@ end
 -- ---------------------------------------------------------------- A5 存盘
 K.log("\n---- 库类型（受保护 = 加密/Player，group 音量那条路对它无效）----")
 for _, line in ipairs(K.machine_block({ "slot", "protected", "scripts" }, libs, "LIBS")) do K.log(line) end
+
+K.log("\n---- 脚本适配器（往空槽注入、对抗库复位）----")
+for _, line in ipairs(K.machine_block({ "slot", "script_slot", "groups", "src_len" }, adapters, "ADAPTERS")) do K.log(line) end
 
 K.log("\n---- 存盘 ----")
 local saved = K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })

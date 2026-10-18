@@ -104,6 +104,7 @@ for (const m of plan.multis) {
     out_nkm: outNkm,
     report,
     save_mode: args.get("save-mode", "patch"),
+    adapter: args.get("adapter", "auto"),
     slots: m.slots.map((s) => ({
       slot: s.slot,
       path: s.path,
@@ -242,6 +243,16 @@ for (const m of plan.multis) {
   if (othersHits.length) {
     console.log(`\n通配 (others) 的命中（清单里写了 others=…）：`)
     for (const l of othersHits) console.log(`  ${l.trim()}`)
+  }
+
+  // 脚本适配器（对抗库复位）
+  const adapters = parseMachineBlock(res.reportText, "ADAPTERS") ?? []
+  if (adapters.length) {
+    console.log(`\n---- 脚本适配器（让 group 音量在每次载入时被重写，对抗库复位）`)
+    for (const a of adapters) console.log(`  槽 ${a.slot} → 脚本槽 ${a.script_slot}（${a.groups} 个 group，${a.src_len} 字节）`)
+  } else if (String(args.get("adapter", "auto")) !== "off") {
+    const skipped = res.reportText.split(/\r?\n/).filter((l) => /脚本适配器没装上/.test(l))
+    if (skipped.length) console.log(`\n（脚本适配器都没装上：${skipped.length} 个槽 —— OT 这类槽受保护的库属正常）`)
   }
 
   const fail = slots.issues.length + micReal.length + res.fails
