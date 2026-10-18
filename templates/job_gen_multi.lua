@@ -89,8 +89,11 @@ K.log("\n---- 库类型（受保护 = 加密/Player，group 音量那条路对�
 for _, line in ipairs(K.machine_block({ "slot", "protected", "scripts" }, libs, "LIBS")) do K.log(line) end
 
 K.log("\n---- 存盘 ----")
-K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })
-local info = Kontakt.get_file_info(JOB.out_nkm)
+local saved = K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })
+-- ⚠️ get_file_info 对**不存在的文件会直接抛错**（不是返回 nil）→ 一定要 pcall 包住，
+--    否则"存盘失败"会连带把整个作业打死：报告写不出来、os.exit 不执行、Kontakt 干挂在那儿。
+local okinfo, info = pcall(Kontakt.get_file_info, JOB.out_nkm)
+if not okinfo then info = nil end
 if info ~= nil then
   local bits = {}
   if type(info) == "table" then
@@ -106,16 +109,27 @@ end
 
 -- ---------------------------------------------------------------- A6 重载 + 回读
 K.log("\n---- 重载回读（判断参数是否真写进文件）----")
-local reloaded = K.try("load_multi", Kontakt.load_multi, JOB.out_nkm)
-local rows = reloaded and K.dump_all_slots() or {}
+-- 存盘失败就别重载了：那会把**上一次留下的旧文件**当成这次的产物读，全是假象。
+local reloaded, rows = nil, {}
+if saved then
+  reloaded = K.try("load_multi", Kontakt.load_multi, JOB.out_nkm)
+  rows = reloaded and K.dump_all_slots() or {}
+else
+  K.log("[FAIL] 存盘失败 —— 跳过重载回读（免得把旧文件当成这次的产物）")
+end
 K.log("  槽位数 = %d", #rows)
 for _, line in ipairs(K.machine_block(K.SLOT_COLS, rows, "SLOTS")) do K.log(line) end
 
 -- 麦克风读数（未加密库才有意义；加密库重载后会被库复位）
 -- 每个期望的麦克风都出一行，找不到的 n=0 —— 这样 Node 侧能区分「别名没覆盖」和「库复位」
+-- ⚠️ 存盘或重载没成功时**不要**读内存里那台：那是我们刚写完的状态，读了只会得到"全部一致"的假 PASS。
+local reloadOk = saved and reloaded ~= nil and #rows > 0
+if not reloadOk then
+  K.log("[FAIL] 存盘/重载没成功 —— 麦克风回读无效（读内存那台只会骗自己）")
+end
 local mics = {}
 for i, s in ipairs(JOB.slots) do
-  local idx = placed[i]
+  local idx = reloadOk and placed[i] or nil
   if idx and s.mic and s.mic.spec then
     local keys = {}
     for k in pairs(s.mic.spec) do

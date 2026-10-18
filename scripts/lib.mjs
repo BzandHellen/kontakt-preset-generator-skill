@@ -539,30 +539,50 @@ export async function launchKontakt({ exe, script, timeoutS = 180, explicitRepor
 
   const before = snapshot()
   const started = Date.now()
+  let timedOut = false
+  let killed = false
+  let scriptError = null
+  let pending = null
+  let done = null
   const child = spawn(exe, [script], { stdio: ["ignore", "pipe", "pipe"], windowsHide: false })
   let stdout = ""
   let stderr = ""
+  const finish = () => {
+    if (pending || !done) return
+    pending = setTimeout(() => done(null), 2500)
+  }
+  const killChild = () => {
+    try {
+      child.kill()
+      killed = true
+    } catch {
+      /* 掐不掉就算了，别把作业流程也搞挂 */
+    }
+  }
   child.stdout.on("data", (b) => (stdout += b.toString()))
-  child.stderr.on("data", (b) => (stderr += b.toString()))
+  // ⚠️ Kontakt 把 Lua 的 print() 送到 **stderr**（`[kontakt.scripting] [info]`），
+  //    而**未捕获的 Lua 错误**会打成 `[error]` —— 那之后脚本已经死了：报告不会来、os.exit 也不会执行，
+  //    进程就在那儿干挂（等到超时白等几分钟）。所以一旦看到 [error] 就提前收工。
+  child.stderr.on("data", (b) => {
+    stderr += b.toString()
+    if (!scriptError && /\[kontakt\.scripting\]\s*\[error\]/.test(stderr)) {
+      scriptError = String(stderr).split(/\r?\n/).filter((l) => /\[kontakt\.scripting\]\s*\[error\]/.test(l)).slice(-1)[0] ?? "（Lua 错误）"
+      if (killOnTimeout) killChild()
+      finish()
+    }
+  })
 
-  let timedOut = false
-  let killed = false
-  const exitCode = await new Promise((done) => {
+  const exitCode = await new Promise((resolve) => {
+    done = resolve
     const timer = setTimeout(() => {
       timedOut = true
-      if (killOnTimeout) {
-        try {
-          child.kill()
-          killed = true
-        } catch {
-          /* 掐不掉就算了，别把作业流程也搞挂 */
-        }
-      }
-      done(null)
+      if (killOnTimeout) killChild()
+      resolve(null)
     }, timeoutS * 1000)
     child.on("exit", (code) => {
       clearTimeout(timer)
-      done(code)
+      done = null
+      resolve(code)
     })
   })
 
@@ -582,6 +602,7 @@ export async function launchKontakt({ exe, script, timeoutS = 180, explicitRepor
   return {
     timedOut,
     killed,
+    scriptError,
     exitCode,
     pid: child.pid,
     ms: Date.now() - started,

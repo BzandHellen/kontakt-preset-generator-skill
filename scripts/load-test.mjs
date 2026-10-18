@@ -110,12 +110,24 @@ for (const chunk of chunks) {
   const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir, killOnTimeout: args.bool("kill-on-timeout") })
   if (!res.reportPath) {
     console.log(
-      `  ⛔ 没拿到报告（超时=${res.timedOut}）` +
-        (res.timedOut ? `\n     —— 多半是某个 patch 弹了「Sample could not be loaded (file seems to be corrupted)」模态框，\n` +
-          `        脚本停在弹框上等回答 → 整块超时，**这一块所有 patch 的结果都丢了**。\n` +
-          `        对策：给这批加 --skip=<坏采样的库>，或者把库重下后再测。\n` +
-          `        ${res.killed ? "（已按 --kill-on-timeout 把这次起的 Kontakt 掐掉）" : "（超时不掐进程，可能还留着）"}` : ""),
+      `  ⛔ 没拿到报告（超时=${res.timedOut}${res.scriptError ? "，作业被 Lua 错误打断" : ""}）` +
+        (res.timedOut
+          ? `\n     —— 多半是某个 patch 弹了「Sample could not be loaded (file seems to be corrupted)」模态框，\n` +
+            `        脚本停在弹框上等回答 → 整块超时，**这一块所有 patch 的结果都丢了**。\n` +
+            `        对策：给这批加 --skip=<坏采样的库>，或者把库重下后再测。\n` +
+            `        ${res.killed ? "（已按 --kill-on-timeout 把这次起的 Kontakt 掐掉）" : "（超时不掐进程，可能还留着）"}`
+          : "") +
+        (res.scriptError ? `\n     Lua 错误：${res.scriptError}` : ""),
     )
+    if (res.timedOut || res.scriptError) {
+      const tail = String(res.stderr ?? "")
+        .split(/\r?\n/)
+        .filter((l) => /\[kontakt\.scripting\]/.test(l))
+        .map((l) => l.replace(/^.*\[kontakt\.scripting\]\s*/, ""))
+        .slice(-20)
+      console.log(`     作业日志尾巴：`)
+      for (const l of tail) console.log(`       ${l}`)
+    }
     for (const c of chunk) all.push({ lib: c.lib, rel: c.rel ?? c.path, loaded: res.timedOut ? "挂住(弹框?)" : "无报告", name: "", groups: "", scripts: "", path: c.path })
     continue
   }

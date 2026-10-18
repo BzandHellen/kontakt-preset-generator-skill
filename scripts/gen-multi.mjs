@@ -151,15 +151,22 @@ for (const m of plan.multis) {
   })
 
   console.log(`退出：${res.timedOut ? `超时（${timeoutS}s，pid ${res.pid}${res.killed ? "，已按 --kill-on-timeout 掐掉" : "，留着没杀"}）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
-  if (res.timedOut) {
-    const tail = String(res.stdout ?? "").split(/\r?\n/).filter((l) => l.trim()).slice(-30)
-    console.log(`\n⛔ 超时 —— 作业最后跑到（stdout 尾巴，能看出卡在哪一步）：`)
+  if (res.scriptError) {
+    console.log(
+      `\n⛔ 作业被 **Lua 错误**打断：${res.scriptError}\n` +
+        `   后果：报告写不出来、os.exit 没执行 → Kontakt 会干挂在那儿（以前要白等到超时）。\n` +
+        `   处理：这是模板里那个**没被 pcall 包住**的调用，修它；日志尾巴在下面。`,
+    )
+  }
+  if (res.timedOut || res.scriptError) {
+    // Kontakt 的 print() 走 stderr（`[kontakt.scripting]`）—— 所以日志尾巴要看 stderr，不是 stdout。
+    const tail = String(res.stderr ?? "")
+      .split(/\r?\n/)
+      .filter((l) => /\[kontakt\.scripting\]/.test(l))
+      .map((l) => l.replace(/^.*\[kontakt\.scripting\]\s*/, ""))
+      .slice(-40)
+    console.log(`\n作业日志尾巴（最后 ${tail.length} 行）：`)
     for (const l of tail) console.log(`  ${l}`)
-    const serr = String(res.stderr ?? "").split(/\r?\n/).filter((l) => /\[kontakt\.scripting\]/.test(l)).slice(-10)
-    if (serr.length) {
-      console.log(`\nstderr 里的 Lua 报错：`)
-      for (const l of serr) console.log(`  ${l}`)
-    }
   }
   console.log(`报告：${res.reportPath ?? "（没找到）"}　OK ${res.oks} / FAIL ${res.fails}`)
 

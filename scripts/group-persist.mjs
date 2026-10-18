@@ -113,7 +113,7 @@ for (const chunk of chunks) {
   for (const row of block) {
     const pick = chunk[Number(row.i) - 1]
     if (!pick) continue
-    const state = row.persisted === "yes" ? "✅ 能存住" : row.persisted === "no" ? "❌ 复位" : "⚠️ 判不了"
+    const state = row.persisted === "yes" ? "✅ 能存住" : row.persisted === "no" ? "❌ 复位" : row.persisted === "save-failed" ? "⛔ 存不进去（Kontakt 侧拒绝写盘）" : "⚠️ 判不了"
     if (row.persisted === "yes" || row.persisted === "no") {
       recordFindings(pick.lib, {
         group_volume_persists: row.persisted === "yes",
@@ -142,6 +142,7 @@ console.log(bullet("结论"))
 console.log(tableText(["库", "结果", "group", "写之前(min)", "重载后(min)"], summary.map((s) => ({ 库: s.库, 结果: s.结果, group: s.group, "写之前(min)": s.写之前, "重载后(min)": s.重载后 }))))
 const ok = summary.filter((s) => s.结果.includes("能存住")).length
 const bad = summary.filter((s) => s.结果.includes("复位")).length
-console.log(`\n共 ${summary.length} 个库：能存住 ${ok}　复位 ${bad}　判不了 ${summary.length - ok - bad}`)
+const blocked = summary.filter((s) => s.结果.includes("存不进去")).length
+console.log(`\n共 ${summary.length} 个库：能存住 ${ok}　复位 ${bad}　**存不进去 ${blocked}**　判不了 ${summary.length - ok - bad - blocked}`)
 console.log(`已写进成果库 group_volume_persists（kontakt_findings 查）`)
 process.exit(EXIT.OK)

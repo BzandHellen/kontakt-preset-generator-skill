@@ -47,7 +47,20 @@ for i, p in ipairs(JOB.patches) do
     local out = (JOB.outdir or "") .. "persist_" .. i .. ".nkm"
     K.try("set_instrument_name", Kontakt.set_instrument_name, idx, "PERSIST TEST " .. i)
     K.try("set_multi_name", Kontakt.set_multi_name, "PERSIST " .. i)
-    K.try("save_multi", Kontakt.save_multi, out, { mode = "patch" })
+    -- ⚠️ 先删旧文件：否则 save 失败时下面会"重载"到上一次留下的旧文件，
+    --    而旧文件里恰好也是 −12（上次测试写的）→ 判成"能存住"，**假 PASS**（2026-10-18 踩过）。
+    os.remove(out)
+    local savedOk = K.try("save_multi", Kontakt.save_multi, out, { mode = "patch" })
+    local okf, info = pcall(Kontakt.get_file_info, out)
+    local fileNew = okf and info ~= nil
+    K.log("   存盘：save=%s  文件=%s", tostring(savedOk), fileNew and "有（新写的）" or "没有")
+
+    if not (savedOk and fileNew) then
+      K.log("[FAIL] **存不进去** —— 这个库/这个 patch 的 multi 现在写不出文件（后面不判了）")
+      row.persisted = "save-failed"
+      rows[#rows + 1] = row
+      goto continue
+    end
 
     K.try("reset_multi(2nd)", Kontakt.reset_multi)
     -- ⚠️ load_multi 的返回值**不是** instrument 索引，必须用 get_instrument_indices 取
@@ -72,6 +85,7 @@ for i, p in ipairs(JOB.patches) do
     row.persisted = "loadfail"
   end
   rows[#rows + 1] = row
+  ::continue::
 end
 
 K.log("\n---- 机器可读 ----")
