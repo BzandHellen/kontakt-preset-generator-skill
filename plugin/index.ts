@@ -583,6 +583,30 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "library_info",
+        description:
+          "**库总表（秒级，不启动 Kontakt）**：扫所有 `.nicnt` 拿明文 XML 里的正式库名 / 厂牌 / **授权系统**" +
+          "（RAS2 / RAS3 / 无）/ SNPID，并统计每库的 nki 数与采样形态（松散 .wav/.ncw vs 打包 .nkx）。\n" +
+          "⚠️ 授权系统与采样形态都**判不出"是否加密"**（实测 Performance Samples 是 RAS3 却未加密）——" +
+          "那是**弱先验**，加密与否仍要靠探测。`merge=true` 把先验写进成果库。",
+        input: {
+          type: "object",
+          properties: {
+            root: { type: "array", items: { type: "string" }, description: "扫描根；默认取 config/libraries.json 或自动探测" },
+            merge: { type: "boolean", description: "把结果并进 data/findings.json" },
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = opt("root", i.root)
+          args.push(...opt("merge", i.merge))
+          return text(await run("library-info.mjs", args, 600_000, 120_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
