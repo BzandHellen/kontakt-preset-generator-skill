@@ -8,7 +8,9 @@
 // 用法：
 //   --list                                    列出已缓存的 multi（含"源 .nkm 是否变了"）
 //   --cache --instance=<id> --channel=<addr> --multi="<名>"   把某通道的 state 缓存下来 + savepreset
-//   --apply --instance=<id> --multi="<名>" [--title=<通道名>] [--channel=<addr>]
+//   --apply --instance=<id> --multi="<名>" [--title=<通道名>] [--channel=<addr>] [--from=<源通道>]
+//      ⛔ 不要用 channel/add 建裸通道（灌了 state 也不发 MIDI）；不给 --channel 就**克隆 --from** 那条，
+//         或者用缓存里记的源通道（--cache 时记下的）
 //                                             用缓存建/灌通道（不给 --channel 就新建一条 Kontakt 通道）
 //   --verify --instance=<id> --channel=<addr> --multi="<名>"  导出并与缓存比对
 //
@@ -162,12 +164,26 @@ if (args.bool("apply")) {
 
   let addr = args.get("channel", "")
   if (!addr) {
-    // 新建一条 Kontakt 通道
+    // ✅ 正解：**克隆一条"已知能用"的通道**
+    // ⛔ 不要用 channel/add 建裸通道：实测（2026-10-19）裸通道灌 state 后 Kontakt 里 4 轨都在，
+    //    但**不发 MIDI**（Kontakt 提示"检查与 DAW 的连接"），而且没有默认通道条 FX（Vienna Stereo Pan）。
+    //    克隆出来的通道接线/FX/state 全继承源通道 → 用户实测能响。
+    const src = args.get("from", "") || (meta.channel ? String(meta.channel) : "")
+    if (!src) fail(`--apply 不给 --channel 时要 --from=<源通道地址>（克隆谁）；或者先 --cache，缓存会记住源通道（这条缓存里${meta.channel ? "有" : "没有"}）`)
     const title = args.get("title", multi)
-    const ch = data(await vep.call("vepro_channel_add", { instanceId: iid, pluginId: KONTAKT_PLUGIN, providerId: "VST3", title, parentFolderAddress: args.get("parent", "root"), idempotencyKey: `ch-${multi}-${Date.now()}` }))
-    addr = ch?.channels?.[0]?.channelAddress
-    if (!addr) fail(`channel/add 失败：${JSON.stringify(ch).slice(0, 200)}`)
-    console.log(`  新建通道：${addr}「${title}」`)
+    const cl = data(await vep.call("vepro_instance_clonechannels", {
+      sourceInstanceId: iid,
+      targetInstanceId: iid,
+      selector: { addresses: [String(src)] },
+      parentFolderAddress: args.get("parent", "root"),
+      idempotencyKey: `clone-${multi}-${Date.now()}`,
+    }))
+    const newCh = cl?.channels?.[0]
+    addr = newCh?.channelAddress
+    if (!addr) fail(`instance/clonechannels 失败：${JSON.stringify(cl).slice(0, 300)}`)
+    console.log(`  克隆通道：${src} → ${addr}（原标题「${newCh?.title ?? ""}」）`)
+    const tr = data(await vep.call("vepro_channel_title_set", { instanceId: iid, selector: { addresses: [addr] }, title }))
+    console.log(`  改名：${addr} → 「${title}」${tr?.status === "success" ? " ✅" : " ⚠ " + JSON.stringify(tr).slice(0, 120)}`)
   }
 
   const set = data(await vep.call("vepro_channel_instrument_state_set", { instanceId: iid, selector: { addresses: [addr] }, blobRef: { blobId: blobRef.blobId, bytes: blobRef.bytes, sha256: blobRef.sha256 }, idempotencyKey: `set-${multi}-${Date.now()}` }))
