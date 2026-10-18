@@ -607,6 +607,36 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "probe_libraries",
+        description:
+          "**批量读库**：一次 Kontakt 进程装一批库的代表 patch，逐个 dump 结构，结果**自动写进成果库**。\n" +
+          "把「每库摸一次」从 N 次启动压成几次（`chunk` 控制每块几个库）。每库默认取 1 个最浅的 patch 代表它。\n" +
+          "产出：加密与否（看脚本 protected）、脚本槽名、group 数、原生 start 条件数、多段力度 group 数、" +
+          "group 名形态、**麦克风名词频候选**。`dryRun=true` 先看计划。",
+        input: {
+          type: "object",
+          properties: {
+            library: { type: "string", description: "只测名字匹配这些子串的库（竖线或逗号分隔）；默认全部" },
+            perLibrary: { type: "number", description: "每库取几个代表 patch，默认 1" },
+            chunk: { type: "number", description: "一次进程装几个库，默认 8" },
+            zones: { type: "number", description: "每个 patch 最多扫多少 zone，默认 4000" },
+            timeout: { type: "number", description: "每块秒数，默认 600" },
+            dryRun: { type: "boolean" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["library", "zones", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("per-library", i.perLibrary), ...opt("chunk", i.chunk), ...opt("dry-run", i.dryRun))
+          return text(await run("probe-libraries.mjs", args, 3_600_000, 150_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
