@@ -5,7 +5,7 @@
 | 文件 | 进 git？ | 是什么 | 怎么来 |
 |---|---|---|---|
 | `kontakt-patches.csv` | ❌ | 扫库得到的 patch 索引（本机 1.6 万条） | `kontakt_db_build` |
-| `findings.json` | ❌ | ★ **本机探测成果库**：每个库的类型 / 脚本 / group / 原生 start 条件 / 音量能否存 / 家族 / 快照 / 已定位的参数 | `kontakt_probe_library(structure:true)` 自动写；`kontakt_findings` 读写 |
+| `findings.json` | ❌ | ★ **本机探测成果库**：每个库的类型 / 脚本 / group / 原生 start 条件 / 音量能否存 / 家族 / 快照 / 已定位的参数 | `probe_libraries` / `probe_library` / `group_persist` / `mic_mine` / `load_test` / `library_info` 会自动往里写；`kontakt_findings` 读写 |
 | `findings.example.json` | ✅ | 成果库的**形状示例**（无本机路径） | 手维护 |
 
 前两类含你的本机路径与库信息，**故意不进 git**（换机器要重建）。

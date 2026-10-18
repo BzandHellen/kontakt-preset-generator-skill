@@ -180,7 +180,7 @@ export default Plugin.define({
           type: "object",
           properties: {
             manifest: { type: "string", description: "清单路径，默认 <工作区>\\manifest\\manifest.tsv" },
-            profiles: { type: "string", description: "profiles.lua 路径，默认 <工作区>\\manifest\\profiles.lua" },
+            profiles: { type: "string", description: "profiles.json 路径，默认 <工作区>\\manifest\\profiles.json" },
             workspace: WORKSPACE,
           },
           additionalProperties: false,
@@ -421,7 +421,7 @@ export default Plugin.define({
       editor.add({
         name: "learn_mic",
         description:
-          "从一个**你已手调好**的乐器（.nki）学出各麦克风的 dB，输出可直接粘进 profiles.lua 的 " +
+          "从一个**你已手调好**的乐器（.nki）学出各麦克风的 dB，输出可直接写回 profiles.json 的 " +
           "`mic_profiles` 片段（只打印，不写回）。只对**未加密库**有意义 —— 加密库的 group 音量存不住，" +
           "学出来是默认值，工具会明确报「学不出，走 snapshot」。",
         input: {
@@ -429,8 +429,8 @@ export default Plugin.define({
           properties: {
             patch: { type: "array", items: { type: "string" }, description: "已调好的 .nki（可多个）" },
             name: { type: "string", description: "输出 profile 名，默认从文件名推" },
-            profiles: { type: "string", description: "profiles.lua 路径（写回时用），默认工作区那份" },
-            write: { type: "boolean", description: "把学到的值写回 profiles.lua 的 mic_profiles（先备份 .bak）" },
+            profiles: { type: "string", description: "profiles.json 路径（写回时用），默认工作区那份" },
+            write: { type: "boolean", description: "把学到的值写回 profiles.json 的 mic_profiles（先备份 .bak）" },
             force: { type: "boolean", description: "写回时允许覆盖同名 profile" },
             mic: { type: "array", items: { type: "string" }, description: "只学这些麦克风名" },
             keyword: { type: "array", items: { type: "string" }, description: "没有别名表时用的关键词" },
@@ -455,7 +455,7 @@ export default Plugin.define({
       editor.add({
         name: "migrate_profiles",
         description:
-          "一次性迁移：把工作区的 `manifest\\profiles.lua` 转成 `profiles.json`（原名留成 .bak）。\n" +
+          "一次性迁移（**已用毕**，保留供重跑）：把工作区的 `manifest\\profiles.lua` 转成 `profiles.json`（原名留成 .bak）。\n" +
           "背景：这份配置只有 Node 工具在读（Kontakt 侧的 Lua 一个都不读它），JSON 读写都是原生的。\n" +
           "`-math.huge`（把麦克风关掉）会写成字符串 `\"off\"` —— 和清单里 `mic = CLOSE=off` 的内联写法一致。",
         input: {

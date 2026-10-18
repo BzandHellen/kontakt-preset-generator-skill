@@ -35,7 +35,7 @@ description: >-
 | `kontakt_inspect_multi` | **是** | 侦察 `.nkm`：槽位参数、库是否加密、group 名普查、麦克风读数（只读） |
 | `kontakt_verify_multi` | **是** | 回读已有 `.nkm` 并与 `Generated\_expect\<multi>.csv` 比对 |
 | `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API；**`structure=true` 探技法/力度层是脚本还是原生**（只读） |
-| `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**加密库的麦克风唯一通路**）；`visual=true` + `save=<路径>` 产出可打开的检查 multi |
+| `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**OT 全系 / 8Dio Requiem 这类"槽受保护或注入不持久"的库的麦通路**；有空脚本槽的复位库走 MIC-ADAPTER 更好）；`visual=true` + `save=<路径>` 产出可打开的检查 multi |
 | `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印片段；`write=true` 直接写回 `profiles.json`（先备份 `.bak`） |
 | `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
 | `kontakt_snapshot_diff` | 否 | `.nksn` **对齐感知差分**：找"哪几个字节变了 + 旁边叫什么"（反推参数用）；只读 |
@@ -45,6 +45,8 @@ description: >-
 | `kontakt_group_persist` | **是** | **验证这个库的 group 音量能不能存住**（= 麦克风能不能全自动）：全 group 设 −12 → 存 → 重载 → 再读 |
 | `kontakt_load_test` | **是** | **装载体检**：这批 `.nki` 哪个装得开（只 `load_instrument`，很快）。范围 `library` / `folder` / `patch`；**坏采样的库要 `skip` 掉**（否则弹模态框把脚本卡死） |
 | `kontakt_mic_mine` | 否 | **从已有报告里挖麦克风 token**（不启动 Kontakt）：把 group 名的字段拆出来当候选；`write=true` 写进 `mic_tokens` |
+| `kontakt_library_info` | 否 | **库总表**（秒级，不启动 Kontakt）：扫 `.nicnt` 拿正式库名/厂牌/授权系统/SNPID + nki 数与采样形态 |
+| `kontakt_vepro_bridge` | 否 | **multi → VE Pro 通道**：`list` / `cache`（导出并缓存 state + 存 VEP 预设）/ `apply`（**克隆**一条已知能用的通道再灌 state）/ `verify` |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
 ## 核心事实（决定一切设计）
@@ -62,7 +64,10 @@ description: >-
    **38 个库**（含 CSS / SCS / Cinesamples 全家 / Spitfire Studio 系列 / 8Dio Anthology·Lacrimosa·Silka /
    Audiobro 主 patch / Performance Samples 全家 / SonicCouture / Heavyocity / 自己的 `MSB *.nki` 样板）
    **直接写 group 音量**，清单 `mic` 列写这些 token 即可（例 `Close=-6;Stage=-4;Surround=off`）；
-   **13 个库**（Orchestral Tools 全家、Strezov 全家、8Dio Requiem）**只能靠「每库一个人工调好的 snapshot（`.nksn`）」**。
+   剩下的是**复位库**，分两条路（2026-10-19 定稿）：
+   - **有空脚本槽**（例 **Strezov 五套**）→ gen 自动往空槽注入 **`MIC-ADAPTER`** 脚本适配器
+     （`on init` 写 group 音量 + `persistence_changed`/`ui_update` 兜底，**随 `.nkm` 存住**）→ 清单照写 dB 即可，**不用快照**；
+   - **槽全 protected / 注入不持久**（**Orchestral Tools 全系**、**8Dio Requiem**）→ **每库一份人工调好的 snapshot（`.nksn`）**。
    ⚠️ **判据一律是实测，不是"有没有 protected"**：
    - LASS 3 的 263 个 `z - Legacy Instruments\` 分技法 patch **脚本受保护，却照样写得进去、存得住**（4/4 实测）；
    - **CSS / SCS 曾被推断为"要 snapshot"，实测 group 音量能写能存**；
@@ -122,15 +127,29 @@ description: >-
 5. （M2 起）`kontakt_gen_multi` 出 `.nkm` 并自动回读校验；`kontakt_reports` 看体检表。
 6. （M4 起）交 `vepro-api` 灌通道。
 
-## 麦克风的两条路（最重要的规范）| 库 | 怎么写 | 清单写法 | 能否自动 |
+## 麦克风的三条路（最重要的规范）
+
+| 库 | 怎么写 | 清单写法 | 能否自动 |
 |---|---|---|---|
-| **未加密**（Performance Samples、Aaron Venture、你自己的 `MSB *.nki` 样板） | 直接写 group 音量 | `mic = CLOSE=-6;others=off` 或 profile 名 | ✅ 全自动，且**能数值验证** |
-| **加密 / Player**（Berlin / CSS / 8Dio / LASS） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = berlin`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
+| **能写能存**（Performance Samples、Aaron Venture、`MSB *.nki` 样板，**以及 CSS / SCS / LASS / Cinesamples** —— 加密也能写） | 直接写 group 音量 | `mic = CLOSE=-6;others=off` 或 profile 名 | ✅ 全自动，且**能数值验证** |
+| **复位但有空脚本槽**（**Strezov 五套**；个别未受保护的库也是） | gen 自动注入 **`MIC-ADAPTER`**（KSP 改 group 音量，随 `.nkm` 存住） | 同上（照写 dB） | ✅ 全自动（`--adapter=auto`，默认开） |
+| **槽全 protected / 注入不持久**（**OT 全系**、**8Dio Requiem**） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = berlin`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
 
 - snapshot **必须人在 UI 里调出来**才有效（脚本改完 group 音量再存是无效的）。
 - snapshot 会**连带承载该库 UI 的其它状态** → 一个库的 snapshot 当「该库的标准状态」维护。
-- 这类库的比例**不落在 group 音量上**，数值读不出来 → 只能人眼确认（`apply_snapshot --visual` 摆对照）。
+- 快照那条路的比例**不落在 group 音量上**，数值读不出来 → 只能人眼确认（`apply_snapshot --visual` 摆对照）。
 - 判「库复位」要看**写之前的基线**：各库基线不同（MSB 0.037 / Berlin 0.001627），不能拿「值很小」当判据。
+- 往空槽注入脚本的**硬规矩**：`set_instrument_script_source` 收**正文**不是路径；KSP 里顶层 `declare` 不能带初值、
+  `on init` 不能 `call` 用户函数、`function` 要在调用点之前、`{ }` 注释要闭合；**判"真跑了"必须留可回读副作用**。
+
+## 两条铁律（会静默出错，必须记）
+
+1. **`save_multi` / `load_multi` 只吃 ASCII 路径**：路径里有中文（或其它非 ASCII）会**静默失败**
+   （`pcall` 返回 true、无报错、磁盘上什么都没有）→ Lua 侧用 ASCII 中转名，Node 跑完再改名
+   （`lib.mjs` 的 `asciiNkmPath` / `stageInputNkm` / `stageOutputNkm` 已封装）。
+2. **VEP 的通道要"克隆"，不能"新建裸通道"**：`channel/add` 建的通道灌了 state 也**不发 MIDI**
+   （Kontakt 提示检查 DAW 连接），且没有默认通道条 FX → 用 `instance/clonechannels` 克隆一条
+   已知能用的通道，再 `channel/title/set` 改名（`vepro_bridge --apply --from=<源通道>`）。
 
 **一种例外，能直接设**：如果库的切换是**原生 group start 条件**（CSS 的 CC110/111 区间就是），
 那 `set_group_start_options` 能程序化改、而且存得住（未加密库实测）。
@@ -142,9 +161,11 @@ description: >-
 - **M2 已完成**（真跑 Kontakt 验过）：`gen_multi` / `inspect_multi` / `verify_multi` / `probe_library`。
 - **M3 已完成**（真跑验过）：`apply_snapshot`（含 `--visual` 对照）/ `learn_mic`（含 `--write` 写回）。
 - **M3+ 已完成**：`snapshot`（`.nksn` 只读体检）、`probe_library --structure`、`verify_multi` 基线判定、
-  `migrate_profiles`（`profiles.lua` → `profiles.json`）；并实测**原生 start 条件可写可持久**。
-- 15 个工具。新增发现见工作区 `docs\Kontakt-Lua-发现与坑.md` §I。
-- M4：`to_vepro`（可选，尚未决定）。
+  `migrate_profiles`（`profiles.lua` → `profiles.json`，**一次性，已删**）；并实测**原生 start 条件可写可持久**。
+- **M4 已完成**（2026-10-19）：`library_info` / `probe_libraries` / `group_persist` / `mic_mine` / `load_test` /
+  `findings` / `snapshot_diff` / `snapshot_lookup` / **`vepro_bridge`**（multi → VEP 通道）；
+  以及 **MIC-ADAPTER 脚本适配器**（复位库全自动）、**ASCII 路径铁律**。
+- **24 个工具**（其中 `migrate_profiles` 是一次性迁移，已用毕、保留供重跑）。新增发现见工作区 `docs\` 与 `references\`。
 
 ## 维护
 
