@@ -734,6 +734,42 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "vepro_bridge",
+        description:
+          "**Kontakt multi → VE Pro 通道（薄桥）**。⚠️ VEP 的 instrument state 只能由 Kontakt 自己产出（自制 state 会被静默拒绝），\n" +
+          "所以**每条 multi 需要人工在 VEP 里加载一次**（在 VEP 的 Kontakt 面板里用 **File → Load multi**；**拖动 .nkm 会让 Kontakt 崩**）。之后全自动：\n" +
+          "  · `mode=\"cache\"`：把某条通道的 state 导出并缓存到 `Generated\\_vepro\\<multi>.state`（+ 元数据）+ 存成 VEP 用户预设 `AI/<multi>`\n" +
+          "  · `mode=\"apply\"`：用缓存建/灌通道（不给 channel 就新建一条 Kontakt 通道），并**自动校验**（再导出与缓存比字节）\n" +
+          "  · `mode=\"verify\"`：只校验某条通道\n" +
+          "  · `mode=\"list\"`：列出已缓存的 multi（含源 .nkm 有没有变过）\n" +
+          "实例/通道清单用 `vepro_discover` 与 VE Pro 的 `instance/list`、`instance/channelsummary`。",
+        input: {
+          type: "object",
+          properties: {
+            mode: { type: "string", description: "list | cache | apply | verify", enum: ["list", "cache", "apply", "verify"] },
+            instance: { type: "string", description: "实例 GUID（cache/apply/verify 必填）" },
+            channel: { type: "string", description: "通道地址（cache/verify 必填；apply 可给可省）" },
+            multi: { type: "string", description: "multi 名 = Generated\\<multi>.nkm 的名字（cache/apply/verify 必填）" },
+            title: { type: "string", description: "apply 新建通道时的通道名（默认 = multi 名）" },
+            preset: { type: "string", description: "cache 时存成 VEP 用户预设的相对路径（默认 AI/<multi>）" },
+            parent: { type: "string", description: "apply 新建通道放在哪个文件夹下（默认 root）" },
+            settle: { type: "number", description: "apply 灌完后等几秒再校验，默认 12" },
+            workspace: WORKSPACE,
+          },
+          required: ["mode"],
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const mode = String(i.mode ?? "list")
+          const args: string[] = ["--" + mode]
+          args.push(...["instance", "channel", "multi", "title", "preset", "parent", "settle", "workspace"].flatMap((k) => opt(k, i[k])))
+          return text(await run("vepro-bridge.mjs", args, 1_800_000, 60_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
