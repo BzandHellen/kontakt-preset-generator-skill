@@ -59,15 +59,16 @@ description: >-
    `load_instrument` 落在已被占用的 idx 上会**自动用下一个空位** → 必须用它的返回値当落点。
 5. **加密库的 group 音量写不进去**：写进去立刻能回读，`save_multi` → `load_multi` 后被库复位。
    → 麦克风比例分两类：
-   **未加密库**（Audiobro 主 patch、Cinesamples CinePerc / CineBrass Sonore、
-   Performance Samples 全家、8Dio Anthology & Lacrimosa、NI Factory Library 2、Spitfire eDNA、自己的 `MSB *.nki` 样板）
+   **38 个库**（含 CSS / SCS / Cinesamples 全家 / Spitfire Studio 系列 / 8Dio Anthology·Lacrimosa·Silka /
+   Audiobro 主 patch / Performance Samples 全家 / SonicCouture / Heavyocity / 自己的 `MSB *.nki` 样板）
    **直接写 group 音量**，清单 `mic` 列写这些 token 即可（例 `Close=-6;Stage=-4;Surround=off`）；
-   另外一些库（Berlin / CSS / SCS / 8Dio Requiem）**只能靠「每库一个人工调好的 snapshot（`.nksn`）」**。
+   **13 个库**（Orchestral Tools 全家、Strezov 全家、8Dio Requiem）**只能靠「每库一个人工调好的 snapshot（`.nksn`）」**。
    ⚠️ **判据一律是实测，不是"有没有 protected"**：
-   - LASS 3 一度被当成加密库，实测 group 音量**能存住**；
-   - 反过来，**LASS 3 的 263 个 `z - Legacy Instruments\` 分技法 patch 脚本受保护，却照样写得进去、存得住**（4/4 实测）；
+   - LASS 3 的 263 个 `z - Legacy Instruments\` 分技法 patch **脚本受保护，却照样写得进去、存得住**（4/4 实测）；
+   - **CSS / SCS 曾被推断为"要 snapshot"，实测 group 音量能写能存**；
    → 所以工具**不再**因为 `protected` 就跳过写入，而是**照写 + 回读比对**；真存不住会被判成「库复位」。
-   → 要判某个 patch：`kontakt_group_persist --patch=<那个 .nki>`。
+   → 查整库：`kontakt_group_persist --all`；查单点：`kontakt_group_persist --patch=<那个 .nki>`。
+   ⚠️ 另外"能写 group 音量"≠"麦克风能按名字切"：还要看 group 名怎么组织（SCS 的四套麦是四个 patch 目录）。
 6. **snapshot 必须用 UI 调出来**：脚本先改 group 音量再 `save_snapshot` 是**无效的**（快照存的是库自己的 UI 状态）。
    而且 snapshot 会连带承载该库 UI 的其它状态 → **一个库的 snapshot 要当「该库的标准状态」维护**。
 7. **`.nkm` / `.nki` 对加密库不透明**：熵≈8、无明文、每次导出字节都不同 → **不解析、不手改**。

@@ -53,7 +53,8 @@ for (const r of rows) {
 // 每库挑代表 patch：优先名字里带常见弦乐/主乐器的，其次最浅的
 const PREFER = /(legato|sustain|longs?|sus|ensemble|main|violins?|vl ?1)/i
 const direct = args.getAll("patch").filter(Boolean).map((p) => resolve(p))
-const picks = []
+// --skip=<正则>：跳过匹配的 patch（坏采样的库必须跳，否则弹模态框把作业卡死）
+let picks = []
 if (direct.length) {
   // 直接点名的 patch（测"这一类 patch"能不能存住，例如 LASS 的 legacy 分技法 patch）
   for (const p of direct) {
@@ -66,6 +67,16 @@ if (direct.length) {
     const preferred = byDepth.filter((r) => PREFER.test(r.PatchFile))
     const chosen = (preferred.length ? preferred : byDepth).slice(0, perLib)
     for (const r of chosen) picks.push({ lib, path: r.Path, patch: r.PatchFile })
+  }
+}
+
+const skipRe = args.get("skip", "") ? new RegExp(args.get("skip"), "i") : null
+if (skipRe) {
+  const skipped = picks.filter((p) => skipRe.test(`${p.lib} ${p.patch} ${p.path}`))
+  picks = picks.filter((p) => !skipRe.test(`${p.lib} ${p.patch} ${p.path}`))
+  if (skipped.length) {
+    console.log(`⚠ 按 --skip=${args.get("skip")} 跳过 ${skipped.length} 个（多半有 0 字节采样，装载会弹模态框卡死）：`)
+    for (const p of skipped.slice(0, 10)) console.log(`   · ${p.lib} → ${p.patch}`)
   }
 }
 
