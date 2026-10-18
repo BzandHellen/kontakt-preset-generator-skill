@@ -637,6 +637,37 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "group_persist",
+        description:
+          "**验证这个库的 group 音量能不能存住**（决定麦克风能不能全自动）：把全部 group 设成固定 dB → 存 multi → " +
+          "重载 → 再读；存活即"这个库的麦克风比例可以直接脚本写"。\n" +
+          "默认只测成果库里**未加密/未知**的库（加密的已知写不住）。结论写进 `group_volume_persists`。\n" +
+          "⚠️ 实测校准过：MSB 样板 / Pacific 判"能存住"、Berlin 判"复位"，与已知一致才采信。",
+        input: {
+          type: "object",
+          properties: {
+            library: { type: "string", description: "只测匹配这些子串的库；默认全部未加密/未知" },
+            all: { type: "boolean", description: "连加密库也测" },
+            db: { type: "number", description: "测试用的 dB，默认 -12" },
+            perLibrary: { type: "number", description: "每库几个代表 patch，默认 1" },
+            chunk: { type: "number", description: "一次进程几个库，默认 6" },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["library", "db", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("per-library", i.perLibrary), ...opt("chunk", i.chunk), ...opt("all", i.all), ...opt("dry-run", i.dryRun))
+          return text(await run("group-persist.mjs", args, 3_600_000, 150_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
