@@ -110,7 +110,8 @@ K.log("\n---- 存盘 ----")
 K.try("save_multi", Kontakt.save_multi, JOB.out_nkm, { mode = JOB.save_mode or "patch" })
 -- ⚠️ get_file_info 对**不存在的文件会直接抛错**（不是返回 nil）→ 一律 pcall 包住，
 --    否则"存盘失败"会连带把整个作业打死：报告写不出来、os.exit 不执行、Kontakt 干挂在那儿。
--- ⚠️ save_multi **异步**落盘 → 必须等（见 K.wait_file），否则会假 FAIL 并跳过重载回读。
+-- ⚠️ save_multi 之后立刻查文件可能查不到 —— 但**别默认当成"还没写完"**：真因通常是非 ASCII 路径（坑 48）
+--    （这里用一个有上限的轮询兜一下：见 K.wait_file；Kontakt 的 Lua 没有 sleep）。
 local info = K.wait_file(JOB.out_nkm, 20, "save_multi")
 local saved = info ~= nil
 if info ~= nil then

@@ -239,10 +239,10 @@ function M.apply_group_mics(idx, spec, aliases)
 end
 
 -- ---------------------------------------------------------------- 等文件真正落盘
--- ⚠️ `save_multi` 是**异步**写盘：紧接着 `get_file_info` 常常还是 nil（大 multi 更明显，
---    例如 5 个不同库的 multi 要 ~1 秒），会在报告里变成"假 FAIL —— 文件没写出来"，
---    并连带跳过重载回读（于是整条链看似失败，其实产物是好的）。
---    Kontakt 的 Lua 没有 sleep → 用 os.time() 做秒级等待。
+-- ⚠️ 判"文件出现"用一个**有上限**的轮询（Kontakt 的 Lua 没有 sleep → 用 os.time() 秒级等待）。
+--    注意：`save_multi` 之后立刻查不到文件，**默认别解释成"还没写完"** ——
+--    2026-10-18 实测过的两个真因是：ⓐ 目标路径含**非 ASCII**（中文）→ save 静默失败（见坑 48）
+--    ⓑ 目标文件上次就存在（假 PASS，见坑 46）。诊断作业里"立刻/+3s/+6s"三次查询是立刻就有文件的。
 function M.wait_file(path, seconds, label)
   seconds = seconds or 20
   local t_end = os.time() + seconds
