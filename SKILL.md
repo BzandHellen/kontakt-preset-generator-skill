@@ -40,7 +40,10 @@ description: >-
 | `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
 | `kontakt_snapshot_diff` | 否 | `.nksn` **对齐感知差分**：找"哪几个字节变了 + 旁边叫什么"（反推参数用）；只读 |
 | `kontakt_snapshot_lookup` | 否 | `.nksn` 按**名字**或按**值**查（秒级）；只读 |
-| `kontakt_findings` | 否 | ★ **本机成果库** `data\findings.json`：每个库的类型/家族/快照/已定位参数。`probe_library --structure` 会自动往里写 |
+| `kontakt_findings` | 否 | ★ **本机成果库** `data\findings.json`：每个库的类型/家族/快照/麦克风 token/已定位参数。探测类工具会自动往里写 |
+| `kontakt_probe_libraries` | **是** | **批量读库**：一次进程装一批库（`chunk`），逐个 dump 结构并**自动写进成果库**（几十个库几分钟） |
+| `kontakt_group_persist` | **是** | **验证这个库的 group 音量能不能存住**（= 麦克风能不能全自动）：全 group 设 −12 → 存 → 重载 → 再读 |
+| `kontakt_mic_mine` | 否 | **从已有报告里挖麦克风 token**（不启动 Kontakt）：把 group 名的字段拆出来当候选；`write=true` 写进 `mic_tokens` |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
 ## 核心事实（决定一切设计）
@@ -54,8 +57,13 @@ description: >-
 4. **索引坑**：一个 multi = 64 个 instrument slot；Lua 的 `instrument_idx` 是 **128 一跳**（slot0=0、slot1=128…）。
    `load_instrument` 落在已被占用的 idx 上会**自动用下一个空位** → 必须用它的返回値当落点。
 5. **加密库的 group 音量写不进去**：写进去立刻能回读，`save_multi` → `load_multi` 后被库复位。
-   → 麦克风比例分两类：**未加密库**（Performance Samples、自己的 `MSB *.nki` 样板）直接写 group 音量；
-   **加密库**（Berlin / CSS / 8Dio / LASS）只能靠「每库一个人工调好的 snapshot（`.nksn`）」。
+   → 麦克风比例分两类：
+   **未加密库**（Audiobro LASS 3 / Modern Scoring Strings / Modern Scoring Brass、Cinesamples CinePerc / CineBrass Sonore、
+   Performance Samples 全家、8Dio Anthology & Lacrimosa、NI Factory Library 2、Spitfire eDNA、自己的 `MSB *.nki` 样板）
+   **直接写 group 音量**，清单 `mic` 列写这些 token 即可（例 `Close=-6;Stage=-4;Surround=off`）；
+   **加密库**（Berlin / CSS / SCS / 8Dio Requiem）只能靠「每库一个人工调好的 snapshot（`.nksn`）」。
+   ⚠️ **别按厂牌猜**：LASS 3 一度被当成加密库，实测 group 音量**能存住**；
+   判据是 `kontakt_group_persist` 的实测结果，不是"这个厂牌通常加密"。
 6. **snapshot 必须用 UI 调出来**：脚本先改 group 音量再 `save_snapshot` 是**无效的**（快照存的是库自己的 UI 状态）。
    而且 snapshot 会连带承载该库 UI 的其它状态 → **一个库的 snapshot 要当「该库的标准状态」维护**。
 7. **`.nkm` / `.nki` 对加密库不透明**：熵≈8、无明文、每次导出字节都不同 → **不解析、不手改**。

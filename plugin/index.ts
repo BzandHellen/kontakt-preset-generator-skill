@@ -668,6 +668,36 @@ export default Plugin.define({
       })
 
       editor.add({
+        name: "mic_mine",
+        description:
+          "**从已有的读库报告里挖出每个库的麦克风 token**（不启动 Kontakt）：group 名的「最后一段 / 破折号尾段 / 首个词」\n" +
+          "往往就是麦克风位置（Audiobro 的 `… | 00 Close`、Cinesamples 的 `… - FL`、Performance Samples 的 `cl …`）。\n" +
+          "输出每库的候选维度 + 取值 + 覆盖度；`write=true` 写进成果库 `mic_tokens`。\n" +
+          "拿到 token 后，清单 `mic` 列直接写它们即可（例 `Close=-6;Stage=-4;Surround=off`）—— 未加密库不用 alias 表。",
+        input: {
+          type: "object",
+          properties: {
+            library: { type: "string", description: "只看名字匹配这些子串的库（竖线或逗号分隔）" },
+            report: { type: "string", description: "指定报告文件或目录；默认用最新一套 probe-libs 报告" },
+            allReports: { type: "boolean", description: "用目录里所有 probe-libs 报告" },
+            how: { type: "string", description: "只看某个萃取器：末段(|) / 末段(-) / 首词 / 末词 / 前2字母 / 前3字母" },
+            top: { type: "number", description: "每库打印几个候选维度，默认 2" },
+            dump: { type: "boolean", description: "把每个萃取器的取值全列出来（不排名）" },
+            write: { type: "boolean", description: "写进成果库 mic_tokens" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["library", "how", "top", "workspace"].flatMap((k) => opt(k, i[k]))
+          args.push(...opt("report", i.report), ...opt("all-reports", i.allReports), ...opt("dump", i.dump), ...opt("write", i.write))
+          return text(await run("mic-mine.mjs", args, 600_000, 150_000))
+        },
+      })
+
+      editor.add({
         name: "run_lua",
         description:
           "逃生舱：带一个 .lua 启动 Kontakt 并等结果（一个 Lua 脚本 = 一次进程，不能驱动运行中的实例）。\n" +
