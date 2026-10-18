@@ -3,8 +3,8 @@
 // 参数解析 / 路径 / 配置 / CSV / TSV / Lua 字面量读取 / 目录遍历 / 文本输出。
 // 只跑 Node 标准库，不依赖 PowerShell（见 README「为什么脚本是 .mjs」）。
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, copyFileSync } from "node:fs"
-import { dirname, extname, join, resolve } from "node:path"
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, copyFileSync, renameSync, rmSync } from "node:fs"
+import { basename, dirname, extname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { execFileSync, spawn } from "node:child_process"
 
@@ -464,6 +464,48 @@ export function recordFindings(name, patch) {
 
 // ---------------------------------------------------------------- 杂项
 // 存在的普通文件才返回 stat，否则 null（junction / 坏路径统一当「没有」）。
+// ---------------------------------------------------------------- ASCII 中转（Kontakt 只吃 ASCII 路径）
+// ⛔ 实测（2026-10-18）：`Kontakt.save_multi` / `load_multi` 对含**非 ASCII**（中文）的路径
+//    **静默失败** —— pcall 返回 true、无任何报错、磁盘上什么也没有。
+//    所以凡是要把路径交给 Kontakt 的地方，都先经这里换成同目录的 ASCII 名。
+export function asciiNkmPath(p) {
+  const base = basename(p).replace(/\.nkm$/i, "")
+  const keep = base
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+  let h = 0
+  for (const ch of base) h = (h * 31 + ch.codePointAt(0)) % 0xffffff
+  return join(dirname(p), `${keep || "multi"}__${h.toString(36)}.nkm`)
+}
+
+// 输入 .nkm：名字带非 ASCII 就复制到 ASCII 名，交给 Kontakt 用；跑完 cleanupInputNkm 删掉
+export function stageInputNkm(p) {
+  if (/^[\x20-\x7E]+$/.test(basename(p))) return { path: p, staged: null }
+  const tmp = asciiNkmPath(p)
+  copyFileSync(p, tmp)
+  return { path: tmp, staged: tmp }
+}
+
+export function cleanupInputNkm(staged) {
+  if (staged) rmSync(staged, { force: true })
+}
+
+// 输出 .nkm：给 Kontakt 用 ASCII 名；跑完调用返回对象的 finalize() 改成最终名
+export function stageOutputNkm(p) {
+  const tmp = asciiNkmPath(p)
+  return {
+    path: tmp,
+    finalize() {
+      if (tmp === p) return p
+      if (existsSync(p)) rmSync(p, { force: true })
+      renameSync(tmp, p)
+      return p
+    },
+  }
+}
+
 export function fileInfo(p) {
   try {
     const st = statSync(p)

@@ -10,11 +10,14 @@ import { basename, join, resolve } from "node:path"
 import {
   EXIT,
   bullet,
+  cleanupInputNkm,
   launchKontakt,
   parseArgs,
   parseMachineBlock,
   preflight,
   reportsDir,
+  stageInputNkm,
+  stageOutputNkm,
   tableText,
   workspaceDir,
 } from "./lib.mjs"
@@ -78,7 +81,8 @@ if (args.bool("visual")) {
   }
 
   const report = join(repDir, `visual-${stamp}.txt`).replace(/\\/g, "/")
-  const savePath = args.get("save", "") ? resolve(args.get("save")) : null
+  const saveStaged = args.get("save", "") ? stageOutputNkm(resolve(args.get("save"))) : null
+  const savePath = saveStaged ? saveStaged.path : null
   const rendered = renderJob(
     "job_snapshot_visual.lua",
     { multi: args.get("multi", "SNAPSHOT TEST"), report, entries, save: savePath, save_mode: args.get("save-mode", "patch") },
@@ -109,7 +113,8 @@ if (args.bool("visual")) {
   const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir })
   console.log(`\n${res.reportPath ? `报告：${res.reportPath}` : "（报告没写出来）"}`)
   if (savePath) {
-    console.log(existsSync(savePath) ? `\n✅ 已写出可打开的 multi：${savePath}\n   在你的 Kontakt 里打开它，逐个点槽看。` : `\n⛔ 没写出 ${savePath}`)
+    const shown = saveStaged.finalize()
+    console.log(existsSync(shown) ? `\n✅ 已写出可打开的 multi：${shown}\n   在你的 Kontakt 里打开它，逐个点槽看。` : `\n⛔ 没写出 ${shown}`)
   } else {
     console.log(res.timedOut ? `\nKontakt 还在开着（pid ${res.pid} 没杀）—— 去点开这 ${entries.length} 个槽看，看完自己关。` : `\n退出：code ${res.exitCode}`)
   }
@@ -161,11 +166,15 @@ const slots = args
   .filter(Boolean)
 
 const report = join(repDir, `apply-snap-${name}-${stamp}.txt`).replace(/\\/g, "/")
+// Kontakt 存/读盘只吃 ASCII 路径（非 ASCII 会**静默失败**）→ 输入复制成 ASCII 中转名、输出先用 ASCII 名
+const stagedIn = stageInputNkm(nkm)
+const stagedOut = stageOutputNkm(outNkm)
+if (stagedIn.staged) console.log(`（输入名带非 ASCII → 给 Kontakt 用 ASCII 中转名：${stagedIn.staged}）`)
 const rendered = renderJob(
   "job_apply_snapshot.lua",
   {
-    in_nkm: nkm.replace(/\\/g, "/"),
-    out_nkm: outNkm.replace(/\\/g, "/"),
+    in_nkm: stagedIn.path.replace(/\\/g, "/"),
+    out_nkm: stagedOut.path.replace(/\\/g, "/"),
     report,
     snapshot: snapshot.replace(/\\/g, "/"),
     slots: slots.length ? slots : null,
@@ -195,8 +204,12 @@ if (pf.problems.length) {
 }
 
 const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir })
+cleanupInputNkm(stagedIn.staged)
+const writtenOut = stagedOut.finalize()
 console.log(`\n退出：${res.timedOut ? `超时（${timeoutS}s）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
 console.log(`报告：${res.reportPath ?? "（没找到）"}　OK ${res.oks} / FAIL ${res.fails}`)
+if (writtenOut !== outNkm) console.log(`产物：${writtenOut}`)
+else console.log(`产物：${outNkm}`)
 
 const before = parseMachineBlock(res.reportText, "BEFORE") ?? []
 const after = parseMachineBlock(res.reportText, "AFTER") ?? []

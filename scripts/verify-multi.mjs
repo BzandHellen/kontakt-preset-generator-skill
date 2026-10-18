@@ -7,12 +7,14 @@ import { basename, join, resolve } from "node:path"
 import {
   EXIT,
   bullet,
+  cleanupInputNkm,
   launchKontakt,
   parseArgs,
   parseMachineBlock,
   preflight,
   readCsv,
   reportsDir,
+  stageInputNkm,
   tableText,
   workspaceDir,
 } from "./lib.mjs"
@@ -66,8 +68,9 @@ const micNamesFinal = micNames.length
     : ["SOLO", "CLOSE", "AB", "TREE", "SURROUND", "MAIN", "MIX", "ROOM"]
 
 const report = join(repDir, `verify-${multiName}-${stampText()}.txt`).replace(/\\/g, "/")
+const stagedV = stageInputNkm(nkm)
 const job = {
-  nkm: nkm.replace(/\\/g, "/"),
+  nkm: stagedV.path.replace(/\\/g, "/"),
   report,
   mic_names: micNamesFinal,
   mic_aliases: mergedAliases(loadProfiles(args).value),
@@ -110,6 +113,7 @@ if (pf.problems.length) {
 }
 
 const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir })
+cleanupInputNkm(stagedV.staged)
 console.log(`\n退出：${res.timedOut ? `超时（${timeoutS}s，pid ${res.pid} 留着没杀）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
 console.log(`报告：${res.reportPath ?? "（没找到）"}　OK ${res.oks} / FAIL ${res.fails}`)
 

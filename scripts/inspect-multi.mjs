@@ -7,11 +7,13 @@ import { basename, join, resolve } from "node:path"
 import {
   EXIT,
   bullet,
+  cleanupInputNkm,
   launchKontakt,
   parseArgs,
   parseMachineBlock,
   preflight,
   reportsDir,
+  stageInputNkm,
   tableText,
   workspaceDir,
 } from "./lib.mjs"
@@ -46,10 +48,11 @@ const micNames = (
 ).map((s) => s.toUpperCase())
 const report = join(repDir, `inspect-${name}-${stampText()}.txt`).replace(/\\/g, "/")
 
+const staged = stageInputNkm(nkm)
 const rendered = renderJob(
   "job_inspect_multi.lua",
   {
-    nkm: nkm.replace(/\\/g, "/"),
+    nkm: staged.path.replace(/\\/g, "/"),
     report,
     census: args.num("census", 15),
     mic_names: micNames,
@@ -60,6 +63,7 @@ const rendered = renderJob(
 
 console.log(bullet("侦察 multi（只读）"))
 console.log(`文件：${nkm}`)
+if (staged.staged) console.log(`      （名字带非 ASCII → 复制成 ASCII 中转名给 Kontakt：${staged.staged}）`)
 console.log(`作业：${rendered.file}`)
 
 const pf = preflight(args)
@@ -75,6 +79,7 @@ if (pf.problems.length) {
 }
 
 const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir })
+cleanupInputNkm(staged.staged)
 console.log(`\n退出：${res.timedOut ? `超时（${timeoutS}s）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
 console.log(`报告：${res.reportPath ?? "（没找到）"}`)
 
