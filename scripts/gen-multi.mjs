@@ -150,7 +150,17 @@ for (const m of plan.multis) {
     reportsDirPath: repDir,
   })
 
-  console.log(`退出：${res.timedOut ? `超时（${timeoutS}s，pid ${res.pid} 留着没杀）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
+  console.log(`退出：${res.timedOut ? `超时（${timeoutS}s，pid ${res.pid}${res.killed ? "，已按 --kill-on-timeout 掐掉" : "，留着没杀"}）` : `code ${res.exitCode}`}　${(res.ms / 1000).toFixed(1)}s`)
+  if (res.timedOut) {
+    const tail = String(res.stdout ?? "").split(/\r?\n/).filter((l) => l.trim()).slice(-30)
+    console.log(`\n⛔ 超时 —— 作业最后跑到（stdout 尾巴，能看出卡在哪一步）：`)
+    for (const l of tail) console.log(`  ${l}`)
+    const serr = String(res.stderr ?? "").split(/\r?\n/).filter((l) => /\[kontakt\.scripting\]/.test(l)).slice(-10)
+    if (serr.length) {
+      console.log(`\nstderr 里的 Lua 报错：`)
+      for (const l of serr) console.log(`  ${l}`)
+    }
+  }
   console.log(`报告：${res.reportPath ?? "（没找到）"}　OK ${res.oks} / FAIL ${res.fails}`)
 
   // 作业里的 [FAIL] 行
@@ -170,10 +180,7 @@ for (const m of plan.multis) {
   const micExpect = readCsv(exp.micCsv)
 
   const slots = compareSlots(expectRows, actual ?? [])
-  const mics = compareMics(
-    micExpect.filter((e) => !prot.has(String(e.slot))),
-    actualMics ?? [],
-  )
+  const mics = compareMics(micExpect, actualMics ?? [])
 
   console.log(`\n---- 参数比对（${slots.checks.length} 项：PASS ${slots.checks.filter((c) => c.ok).length} / FAIL ${slots.issues.length}）`)
   if (slots.issues.length) {
@@ -185,7 +192,6 @@ for (const m of plan.multis) {
     )
   } else console.log("全部一致。")
 
-  const micSkipped = micExpect.filter((e) => prot.has(String(e.slot)))
   const { real: micReal, reset: micReset, missing: micMissing } = classifyMicIssues(mics.issues, actualMics ?? [])
   console.log(
     `\n---- 麦克风比对（${mics.checks.length} 项：PASS ${mics.checks.filter((c) => c.ok).length} / FAIL ${micReal.length}）`,
@@ -209,11 +215,12 @@ for (const m of plan.multis) {
         `   这是 profiles 的 mic_aliases 没覆盖到这些 patch，用 probe_library 普查后补别名。`,
     )
   }
-  if (micSkipped.length) {
+  // 以前这里会把"受保护槽"的麦克风期望整条排除；现在**照写照比**（LASS 的分技法 patch 就是受保护但能存住）。
+  // 真存不住的会被 classifyMicIssues 判成「库复位」，在下面那条 WARN 里提示配 snapshot。
+  if (prot.size) {
     console.log(
-      `\n⛔ 有 ${micSkipped.length} 条麦克风期望落在**受保护（加密/Player）**的槽上：` +
-        `${[...new Set(micSkipped.map((e) => e.slot))].join("、")}\n` +
-        `   装载时已拦下（没白写），它只能靠 snapshot。`,
+      `\nℹ 这批里有 ${prot.size} 个槽的库脚本受保护（加密/Player）：${[...prot].join("、")}\n` +
+        `   照写、回读见分晓 —— 存不住会出现在上面的「库复位」提示里（那就给它配 snapshot）。`,
     )
   }
 

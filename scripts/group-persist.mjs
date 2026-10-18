@@ -8,8 +8,10 @@
 // 默认只测成果库里 kind 为 unencrypted / 未知的库（加密的已知写不住，没必要测）。
 //
 // 用法：--library="LASS|Modern Scoring"  只测匹配的库　--db=-12　--chunk=6　--dry-run
+//       --patch=<绝对路径>（可多个）　　直接点名要测的 patch（测"这一批 patch"能不能存住）
 
 import { existsSync, mkdirSync } from "node:fs"
+import { resolve } from "node:path"
 import { EXIT, bullet, dbPath, launchKontakt, loadFindings, matchLibraryKey, parseArgs, parseMachineBlock, preflight, readCsv, recordFindings, reportsDir, tableText } from "./lib.mjs"
 import { renderJob } from "./job.mjs"
 
@@ -50,12 +52,21 @@ for (const r of rows) {
 
 // 每库挑代表 patch：优先名字里带常见弦乐/主乐器的，其次最浅的
 const PREFER = /(legato|sustain|longs?|sus|ensemble|main|violins?|vl ?1)/i
+const direct = args.getAll("patch").filter(Boolean).map((p) => resolve(p))
 const picks = []
-for (const [lib, list] of byLib) {
-  const byDepth = [...list].sort((a, b) => a.Path.split("/").length - b.Path.split("/").length || a.Path.localeCompare(b.Path))
-  const preferred = byDepth.filter((r) => PREFER.test(r.PatchFile))
-  const chosen = (preferred.length ? preferred : byDepth).slice(0, perLib)
-  for (const r of chosen) picks.push({ lib, path: r.Path, patch: r.PatchFile })
+if (direct.length) {
+  // 直接点名的 patch（测"这一类 patch"能不能存住，例如 LASS 的 legacy 分技法 patch）
+  for (const p of direct) {
+    const hit = rows.find((r) => String(r.Path).replace(/\\/g, "/").toLowerCase() === p.replace(/\\/g, "/").toLowerCase())
+    picks.push({ lib: hit ? hit.Library : "(指定)", path: p.replace(/\\/g, "/"), patch: hit ? hit.PatchFile : p.split(/[\\/]/).pop() })
+  }
+} else {
+  for (const [lib, list] of byLib) {
+    const byDepth = [...list].sort((a, b) => a.Path.split("/").length - b.Path.split("/").length || a.Path.localeCompare(b.Path))
+    const preferred = byDepth.filter((r) => PREFER.test(r.PatchFile))
+    const chosen = (preferred.length ? preferred : byDepth).slice(0, perLib)
+    for (const r of chosen) picks.push({ lib, path: r.Path, patch: r.PatchFile })
+  }
 }
 
 console.log(bullet(`group 音量持久化测试 —— ${byLib.size} 个库 / ${picks.length} 个代表 patch（全设 ${testDb} dB）`))
@@ -92,7 +103,7 @@ for (const chunk of chunks) {
   const job = { db: testDb, outdir: outDir, report, patches: chunk.map((c) => c.path.replace(/\\/g, "/")) }
   const rendered = renderJob("job_group_persist.lua", job, { args, slug: `group-persist-${ci}` })
   console.log(`\n第 ${ci}/${chunks.length} 块（${chunk.length} 个库）：启动 Kontakt…`)
-  const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir })
+  const res = await launchKontakt({ exe: pf.exe, script: rendered.file, timeoutS, explicitReport: report, reportsDirPath: repDir, killOnTimeout: args.bool("kill-on-timeout") })
   if (!res.reportPath) {
     console.log(`  ⛔ 没拿到报告（超时=${res.timedOut}）`)
     for (const c of chunk) summary.push({ 库: c.lib, 结果: "无报告" })

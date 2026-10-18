@@ -521,8 +521,10 @@ export function listKontaktProcesses() {
 // ---------------------------------------------------------------- 启动 Kontakt 跑一个 Lua 作业
 // 约定（见 SKILL.md）：一个 Lua 脚本 = 一次进程；结果靠「报告文件」而不是 stdout。
 // 报告定位：显式给路径就用它；否则盯 reportsDir 里新增/更新的 .txt，取最新的那份。
-// 超时**不 kill** —— 有些脚本故意留着机架给人看。
-export async function launchKontakt({ exe, script, timeoutS = 180, explicitReport = null, reportsDirPath = null }) {
+// 超时默认**不 kill** —— 有些脚本故意留着机架给人看。
+// 但坏采样弹模态框会把作业卡死（脚本停在 load_instrument 上）→ 那种情况用 killOnTimeout: true
+// 把**我们自己刚起的**这个进程掐掉（只掐 agent 起的那个；永远不碰用户自己的实例）。
+export async function launchKontakt({ exe, script, timeoutS = 180, explicitReport = null, reportsDirPath = null, killOnTimeout = false }) {
   const snapshot = () => {
     const m = new Map()
     if (!reportsDirPath || !existsSync(reportsDirPath)) return m
@@ -544,9 +546,18 @@ export async function launchKontakt({ exe, script, timeoutS = 180, explicitRepor
   child.stderr.on("data", (b) => (stderr += b.toString()))
 
   let timedOut = false
+  let killed = false
   const exitCode = await new Promise((done) => {
     const timer = setTimeout(() => {
       timedOut = true
+      if (killOnTimeout) {
+        try {
+          child.kill()
+          killed = true
+        } catch {
+          /* 掐不掉就算了，别把作业流程也搞挂 */
+        }
+      }
       done(null)
     }, timeoutS * 1000)
     child.on("exit", (code) => {
@@ -570,6 +581,7 @@ export async function launchKontakt({ exe, script, timeoutS = 180, explicitRepor
 
   return {
     timedOut,
+    killed,
     exitCode,
     pid: child.pid,
     ms: Date.now() - started,

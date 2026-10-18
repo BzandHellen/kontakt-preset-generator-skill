@@ -43,6 +43,7 @@ description: >-
 | `kontakt_findings` | 否 | ★ **本机成果库** `data\findings.json`：每个库的类型/家族/快照/麦克风 token/已定位参数。探测类工具会自动往里写 |
 | `kontakt_probe_libraries` | **是** | **批量读库**：一次进程装一批库（`chunk`），逐个 dump 结构并**自动写进成果库**（几十个库几分钟） |
 | `kontakt_group_persist` | **是** | **验证这个库的 group 音量能不能存住**（= 麦克风能不能全自动）：全 group 设 −12 → 存 → 重载 → 再读 |
+| `kontakt_load_test` | **是** | **装载体检**：这批 `.nki` 哪个装得开（只 `load_instrument`，很快）。范围 `library` / `folder` / `patch`；**坏采样的库要 `skip` 掉**（否则弹模态框把脚本卡死） |
 | `kontakt_mic_mine` | 否 | **从已有报告里挖麦克风 token**（不启动 Kontakt）：把 group 名的字段拆出来当候选；`write=true` 写进 `mic_tokens` |
 | `kontakt_run_lua` | **是** | 逃生舱：前置检查 → 启动 Kontakt 跑一个 `.lua` → 回传报告（`dryRun` 只演练） |
 
@@ -58,12 +59,15 @@ description: >-
    `load_instrument` 落在已被占用的 idx 上会**自动用下一个空位** → 必须用它的返回値当落点。
 5. **加密库的 group 音量写不进去**：写进去立刻能回读，`save_multi` → `load_multi` 后被库复位。
    → 麦克风比例分两类：
-   **未加密库**（Audiobro LASS 3 / Modern Scoring Strings / Modern Scoring Brass、Cinesamples CinePerc / CineBrass Sonore、
+   **未加密库**（Audiobro 主 patch、Cinesamples CinePerc / CineBrass Sonore、
    Performance Samples 全家、8Dio Anthology & Lacrimosa、NI Factory Library 2、Spitfire eDNA、自己的 `MSB *.nki` 样板）
    **直接写 group 音量**，清单 `mic` 列写这些 token 即可（例 `Close=-6;Stage=-4;Surround=off`）；
-   **加密库**（Berlin / CSS / SCS / 8Dio Requiem）只能靠「每库一个人工调好的 snapshot（`.nksn`）」。
-   ⚠️ **别按厂牌猜**：LASS 3 一度被当成加密库，实测 group 音量**能存住**；
-   判据是 `kontakt_group_persist` 的实测结果，不是"这个厂牌通常加密"。
+   另外一些库（Berlin / CSS / SCS / 8Dio Requiem）**只能靠「每库一个人工调好的 snapshot（`.nksn`）」**。
+   ⚠️ **判据一律是实测，不是"有没有 protected"**：
+   - LASS 3 一度被当成加密库，实测 group 音量**能存住**；
+   - 反过来，**LASS 3 的 263 个 `z - Legacy Instruments\` 分技法 patch 脚本受保护，却照样写得进去、存得住**（4/4 实测）；
+   → 所以工具**不再**因为 `protected` 就跳过写入，而是**照写 + 回读比对**；真存不住会被判成「库复位」。
+   → 要判某个 patch：`kontakt_group_persist --patch=<那个 .nki>`。
 6. **snapshot 必须用 UI 调出来**：脚本先改 group 音量再 `save_snapshot` 是**无效的**（快照存的是库自己的 UI 状态）。
    而且 snapshot 会连带承载该库 UI 的其它状态 → **一个库的 snapshot 要当「该库的标准状态」维护**。
 7. **`.nkm` / `.nki` 对加密库不透明**：熵≈8、无明文、每次导出字节都不同 → **不解析、不手改**。
@@ -87,6 +91,9 @@ description: >-
    `kontakt_run_lua` 会把这类错误单独列出来。**没有报告 + stderr 里有 scripting error = 脚本没跑起来**。
 12. Kontakt 退出时那一串 `bmemory.cpp DoVMUnLock: VirtualUnlock(...) errno = 158` 就是
    `0xC0000005` 的来源（关机阶段），**与作业成败无关**。
+13. **坏采样会弹模态框把整个作业卡死**：0 字节采样 → 「Sample could not be loaded … Do you want to continue loading?」
+   → Lua 停在 `load_instrument` 等回答 → 整块超时、**同块里其它 patch 的结果也一起丢**（机器可读块是跑完才写）。
+   agent 起的实例没窗口，看不到弹框。**对策：坏库（0 字节）用 `kontakt_load_test --skip=<库>` 跳开，`chunk` 调小。**
 
 ## 写盘与安全（硬约束）
 

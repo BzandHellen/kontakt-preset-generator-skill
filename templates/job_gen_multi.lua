@@ -43,11 +43,12 @@ for i, s in ipairs(JOB.slots) do
     local si = K.script_info(idx)
     libs[#libs + 1] = { slot = s.slot, protected = tostring(si.protected), scripts = table.concat(si.names, " | ") }
 
-    -- ⛔ 加密/Player 库：group 音量写进去也存不住（会被库复位）。这里直接拦下来，别静默白写。
+    -- ⚠️ 以前这里"受保护就直接不写"，但那是**假设**：实测 LASS 的分技法 legacy patch 受保护却**写得进去也存得住**。
+    -- 所以现在**照写**，让"存盘→重载→回读"来判：真存不住会被判成「库复位」（WARN，不是 FAIL），
+    -- 那时再给这个库配 snapshot 也不迟。
     if si.protected and s.mic and s.mic.mode == "groups" and next(s.mic.spec or {}) ~= nil then
-      K.log("[WARN] 这个库受保护（加密/Player），group 音量存不住 —— 本次写入存盘后会被复位")
-      K.log("       该库的麦克风只能走 snapshot：在清单里给它配 snapshot=<库的 .nksn>")
-      s.mic = { mode = "snapshot-needed", spec = s.mic.spec, note = "受保护库不能写 group 音量" }
+      K.log("[WARN] 这个 patch 的库脚本受保护（加密/Player）—— 照写，回读见分晓：")
+      K.log("       存不住 = 这条库要配 snapshot；存得住（有先例）= 就这样用")
     end
 
     if s.snapshot and s.snapshot ~= "" then

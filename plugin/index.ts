@@ -647,6 +647,7 @@ export default Plugin.define({
           type: "object",
           properties: {
             library: { type: "string", description: "只测匹配这些子串的库；默认全部未加密/未知" },
+            patch: { type: "string", description: "直接点名要测的 .nki 绝对路径（可多个，用 | 分隔）——测\"这一批 patch\"能不能存住" },
             all: { type: "boolean", description: "连加密库也测" },
             db: { type: "number", description: "测试用的 dB，默认 -12" },
             perLibrary: { type: "number", description: "每库几个代表 patch，默认 1" },
@@ -662,6 +663,7 @@ export default Plugin.define({
         execute: async (input) => {
           const i = input as Record<string, unknown>
           const args = ["library", "db", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          if (typeof i.patch === "string" && i.patch) for (const p of i.patch.split("|")) args.push("--patch", p)
           args.push(...opt("per-library", i.perLibrary), ...opt("chunk", i.chunk), ...opt("all", i.all), ...opt("dry-run", i.dryRun))
           return text(await run("group-persist.mjs", args, 3_600_000, 150_000))
         },
@@ -694,6 +696,40 @@ export default Plugin.define({
           const args = ["library", "how", "top", "workspace"].flatMap((k) => opt(k, i[k]))
           args.push(...opt("report", i.report), ...opt("all-reports", i.allReports), ...opt("dump", i.dump), ...opt("write", i.write))
           return text(await run("mic-mine.mjs", args, 600_000, 150_000))
+        },
+      })
+
+      editor.add({
+        name: "load_test",
+        description:
+          "**装载体检**：这一批 `.nki` 哪个装得开（只 `load_instrument`，不扫 zone → 快）。\n" +
+          "用途：库里有 **0 字节采样/patch** 时，先跑它拿到\"到底哪几个 patch 不能用\"；也能用来快速确认一批 patch 还在不在。\n" +
+          "范围：`library`（库名子串）/ `folder`（路径正则）/ `patch`（直接点名）。`write=true` 把结论写进成果库 `load_test`。",
+        input: {
+          type: "object",
+          properties: {
+            library: { type: "string", description: "库名子串（竖线或逗号分隔）" },
+            folder: { type: "string", description: "路径正则（例 `Synth\\\\3 - Bass`）" },
+            skip: { type: "string", description: "跳过匹配的 patch（正则，按库名+路径）—— 有 0 字节采样的库必须跳过，否则会弹模态框把脚本卡死" },
+            patch: { type: "string", description: "直接指定 .nki 绝对路径（可多个，用 | 分隔）" },
+            limit: { type: "number", description: "最多测几个，默认 200" },
+            chunk: { type: "number", description: "一次进程几个，默认 40" },
+            write: { type: "boolean", description: "把结论写进成果库 load_test" },
+            killOnTimeout: { type: "boolean", description: "超时就把这次起的 Kontakt 掐掉（默认不掐；诊断坏采样时用）" },
+            dryRun: { type: "boolean" },
+            timeout: { type: "number" },
+            exe: { type: "string" },
+            workspace: WORKSPACE,
+          },
+          additionalProperties: false,
+        },
+        options: { namespace: "kontakt", codemode: true },
+        execute: async (input) => {
+          const i = input as Record<string, unknown>
+          const args = ["library", "folder", "skip", "limit", "chunk", "timeout", "exe", "workspace"].flatMap((k) => opt(k, i[k]))
+          if (typeof i.patch === "string" && i.patch) for (const p of i.patch.split("|")) args.push("--patch", p)
+          args.push(...opt("write", i.write), ...opt("dry-run", i.dryRun), ...opt("kill-on-timeout", i.killOnTimeout))
+          return text(await run("load-test.mjs", args, 3_600_000, 150_000))
         },
       })
 
