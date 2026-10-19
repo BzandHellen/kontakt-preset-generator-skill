@@ -136,8 +136,8 @@ description: >-
 |---|---|---|---|
 | **能写能存**（Performance Samples、Aaron Venture、`MSB *.nki` 样板，**以及 CSS / SCS / LASS / Cinesamples** —— 加密也能写） | 直接写 group 音量 | `mic = CLOSE=-6;others=off` 或 profile 名 | ✅ 全自动，且**能数值验证** |
 | **复位但有空脚本槽**（**Strezov 五套**；个别未受保护的库也是） | gen 自动注入 **`MIC-ADAPTER`**（KSP 改 group 音量，随 `.nkm` 存住） | 同上（照写 dB） | ✅ 全自动（`--adapter=auto`，默认开） |
-| **槽 protected / 注入不持久**（**8Dio Requiem**） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = requiem`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
-| ⛔ **OT 全系：不走快照**（2026-10-19 用户定） | **只装 patch + 顺序 MIDI 通道**，麦用库默认 | 清单留空（或 `mic = unity`） | ✅ 全自动。库自带力度/xfade 够用；实测**快照会把音域/映射（跨乐器 → 低音出声高音不出声）和延音状态一起带过去**，副作用太多 |
+| **槽 protected / 注入不持久**（**8Dio Requiem**） | 库自己的 UI 状态，曾靠 `.nksn` | —— | ⛔ **快照整条路已停用**（2026-10-19 用户决定）；这类库现按下面的 OT 做法：只装 patch + 顺序通道 |
+| **OT 全系**（Berlin 五套 + Ark 1/3…） | **只装 patch + 顺序 MIDI 通道**，麦用库默认 | 清单留空（或 `mic = unity`） | ✅ 全自动。库自带力度/xfade 够用；实测**快照会把音域/映射（跨乐器 → 低音出声高音不出声）和延音状态一起带过去**，副作用太多 |
 
 - snapshot **必须人在 UI 里调出来**才有效（脚本改完 group 音量再存是无效的）。
 - snapshot 会**连带承载该库 UI 的其它状态** → 一个库的 snapshot 当「该库的标准状态」维护。
