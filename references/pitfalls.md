@@ -155,3 +155,6 @@
     工具侧已加硬闸：源通道必须「标题不像 master bus」+「有乐器」+「`fxCount ≥ 1`（有默认通道条）」。
 56. **判"宿主卡死"的判据**（别猜）：`Get-Process <宿主> | Select Responding,CPU` → `Responding=False` +
     CPU 持续空转 + 端口仍 Listen 但 API 报 `Socket closed while reading response`。
+58. **通道的 MIDI 路由可能是 "All"（读出来是 `-2`）** —— **别当成"未分配"**：一个 multi 里**每技法一个 MIDI 通道**时，
+    通道必须监听 All 才能切技法。**API 的 `midiChannel` 只收 1..16，设不了 −2** → 只能**从一条 All 的源通道克隆**继承。
+    （2026-10-19 我把一条本该是 All 的通道误改成 ch1，结果只有槽 0 能响。）

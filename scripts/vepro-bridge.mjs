@@ -224,43 +224,22 @@ if (args.bool("apply")) {
     const trOk = tr?.status === "success" || (Array.isArray(tr?.results) && tr.results.every((x) => typeof x?.result === "string"))
     console.log(`  改名：${addr} → 「${title}」${trOk ? " ✅" : " ⚠ " + JSON.stringify(tr).slice(0, 140)}`)
 
-    // ⚠️ 克隆会把**源通道的 MIDI 路由一起复制** → 必须给克隆体重新分配，
-    //    否则两条通道听同一个 port/ch（2026-10-19 实测：TEMPLATE 与克隆体都在 port1/ch1，
-    //    一个键盘同时弹两台乐器；`instance/midirouting/summary` 会报 duplicates）。
+    // ⚠️ VEP 通道的 **MIDI 路由不要乱动**：用户的规矩是「**每技法一个 MIDI 通道 → 该 VEP 通道必须监听 All（−2）**」，
+    //    靠通道号切技法；而克隆会**继承源通道的路由**（2026-10-19 实测：从 All 的源克隆出来的通道直接读到 ch −2 = All）。
+    //    API 的 `midiChannel` 参数**只接受 1..16，设不了 All** → 这里只报告 + 不是 All 时提醒，绝不擅自改成具体通道。
     if (args.has("midi-ch")) {
       const mc = Number(args.get("midi-ch"))
       await vep.call("vepro_channel_midichannel_set", { instanceId: iid, selector: { addresses: [addr] }, midiChannel: mc, discoveryTimeout: 6 })
       console.log(`  MIDI 路由：${addr} → ch ${mc}（--midi-ch 指定）`)
     } else {
-      const others = (data(await vep.call("vepro_instance_channelsummary", {
-        instanceId: iid,
-        fields: ["channelAddress", "hasInstrument"],
-        discoveryTimeout: 6,
-      })) ?? []).filter((x) => x.hasInstrument && String(x.channelAddress) !== String(addr))
-      const used = new Set()
-      for (const x of others) {
-        const [pt, chn] = await Promise.all([
-          vep.call("vepro_channel_midiport_get", { instanceId: iid, channelAddress: String(x.channelAddress), discoveryTimeout: 6 }),
-          vep.call("vepro_channel_midichannel_get", { instanceId: iid, channelAddress: String(x.channelAddress), discoveryTimeout: 6 }),
-        ])
-        const p = data(pt)?.port
-        const c = data(chn)
-        if (typeof p === "number" && typeof c === "number" && c >= 1) used.add(`${p}/${c}`)
+      const pg = data(await vep.call("vepro_channel_midiport_get", { instanceId: iid, channelAddress: String(addr), discoveryTimeout: 6 }))
+      const cg = data(await vep.call("vepro_channel_midichannel_get", { instanceId: iid, channelAddress: String(addr), discoveryTimeout: 6 }))
+      const isAll = cg === -2
+      console.log(`  MIDI 路由（继承自源通道）：${addr} → port ${pg?.port} / ${isAll ? "All（−2）✅" : "ch " + cg}`)
+      if (!isAll) {
+        console.log(`  ⚠️ 不是 All：一个 multi 里**每技法在不同 MIDI 通道**，通道不设 All 会切不到别的技法。
+      → 请在 VEP GUI 里把这条通道设成 **All**（API 设不了 −2），或者改用一个 All 的源通道再克隆。`)
       }
-      let freePort = 1
-      let freeCh = 1
-      search: for (let p = 1; p <= 8; p++) {
-        for (let c = 1; c <= 16; c++) {
-          if (!used.has(`${p}/${c}`)) {
-            freePort = p
-            freeCh = c
-            break search
-          }
-        }
-      }
-      await vep.call("vepro_channel_midiport_set", { instanceId: iid, selector: { addresses: [addr] }, midiPort: freePort, discoveryTimeout: 6 })
-      await vep.call("vepro_channel_midichannel_set", { instanceId: iid, selector: { addresses: [addr] }, midiChannel: freeCh, discoveryTimeout: 6 })
-      console.log(`  MIDI 路由：${addr} → port ${freePort} / ch ${freeCh}（自动避开克隆继承来的重复路由；要指定用 --midi-ch）`)
     }
   }
 

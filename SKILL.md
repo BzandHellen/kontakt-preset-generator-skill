@@ -38,7 +38,7 @@ description: >-
 | `kontakt_inspect_multi` | **是** | 侦察 `.nkm`：槽位参数、库是否加密、group 名普查、麦克风读数（只读） |
 | `kontakt_verify_multi` | **是** | 回读已有 `.nkm` 并与 `Generated\_expect\<multi>.csv` 比对 |
 | `kontakt_probe_library` | **是** | 进新库先探测：库类型、group 名规律、麦克风名候选；`api=true` 列 API；**`structure=true` 探技法/力度层是脚本还是原生**（只读） |
-| `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**OT 全系 / 8Dio Requiem 这类"槽受保护或注入不持久"的库的麦通路**；有空脚本槽的复位库走 MIC-ADAPTER 更好）；`visual=true` + `save=<路径>` 产出可打开的检查 multi |
+| `kontakt_apply_snapshot` | **是** | 把 `.nksn` 套到 multi 的槽上（**注入不持久**的库（8Dio Requiem）与**要在 GUI 改开关**的场景；⛔ **OT 全系不用它** —— 2026-10-19 用户定：只装 patch + 顺序通道）；`visual=true` + `save=<路径>` 产出可打开的检查 multi |
 | `kontakt_learn_mic` | **是** | 从你已调好的 `.nki` 学出麦克风 dB → 打印片段；`write=true` 直接写回 `profiles.json`（先备份 `.bak`） |
 | `kontakt_snapshot` | 否 | `.nksn` **只读体检**：列出可读参数名、关键词命中、两份差异。**绝不修改 snapshot** |
 | `kontakt_snapshot_diff` | 否 | `.nksn` **对齐感知差分**：找"哪几个字节变了 + 旁边叫什么"（反推参数用）；只读 |
@@ -136,7 +136,8 @@ description: >-
 |---|---|---|---|
 | **能写能存**（Performance Samples、Aaron Venture、`MSB *.nki` 样板，**以及 CSS / SCS / LASS / Cinesamples** —— 加密也能写） | 直接写 group 音量 | `mic = CLOSE=-6;others=off` 或 profile 名 | ✅ 全自动，且**能数值验证** |
 | **复位但有空脚本槽**（**Strezov 五套**；个别未受保护的库也是） | gen 自动注入 **`MIC-ADAPTER`**（KSP 改 group 音量，随 `.nkm` 存住） | 同上（照写 dB） | ✅ 全自动（`--adapter=auto`，默认开） |
-| **槽全 protected / 注入不持久**（**OT 全系**、**8Dio Requiem**） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = berlin`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
+| **槽 protected / 注入不持久**（**8Dio Requiem**） | 库自己的 UI 状态，只能靠 `.nksn` | `mic = requiem`（→ `profiles.mic_snapshots`）；或 `mic = snap:<文件>` | ⚠ 需**每库人工调一次** snapshot |
+| ⛔ **OT 全系：不走快照**（2026-10-19 用户定） | **只装 patch + 顺序 MIDI 通道**，麦用库默认 | 清单留空（或 `mic = unity`） | ✅ 全自动。库自带力度/xfade 够用；实测**快照会把音域/映射（跨乐器 → 低音出声高音不出声）和延音状态一起带过去**，副作用太多 |
 
 - snapshot **必须人在 UI 里调出来**才有效（脚本改完 group 音量再存是无效的）。
 - snapshot 会**连带承载该库 UI 的其它状态** → 一个库的 snapshot 当「该库的标准状态」维护。
