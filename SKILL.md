@@ -16,8 +16,11 @@ description: >-
 相对路径都相对本目录：`scripts/`（Node 脚本）、`plugin/`（工具插件）、`data/`（索引）、`config/`（本机配置）。
 
 **工作区（数据与产物在那边，不在本仓库）**：`C:\VEPRO\Kontakt Patch`
-—— 清单 `manifest\manifest.tsv`、库级默认 `manifest\profiles.json`、产物 `Generated\`、报告 `Reports\`。
-方案与实测证据在工作区 `README.md` 与 `docs\Kontakt-Lua-发现与坑.md`（**动手前先读那份**）。
+—— 根目录只有 `README.md` / `docs\` / `Generated\` / **`work\`**（二级工作目录）；
+清单与库级默认在 `work\manifest\`（`*.tsv`、`profiles.json`），报告在 `work\Reports\`，作业在 `work\jobs\`，
+实验脚本在 `work\scripts\`；产物在 `Generated\`（`_expect\` 期望值、`_vepro\` 缓存的 VEP state）。
+> 工具默认路径已跟这个布局（`lib.mjs` 的 `workDir()`：有 `work\` 就用它，否则退回根目录的旧布局）。
+方案与实测证据在工作区 `README.md` 与 `docs\`（**动手前先读那份**）。
 
 ## 已注册的工具（OpenChamber / Code Mode 直接调用）
 

@@ -1,7 +1,7 @@
 # 工作流与数据模型
 
 > 通用文档（去个人化）。本机特有的库名 / 路径 / 快照文件名 / 偏好数值**不在**这里；
-> 那些在工作区的 `manifest\profiles.json`、成果库（`data/findings.json`）与个人文档里。
+> 那些在工作区的 `work\manifest\profiles.json`、成果库（`data/findings.json`）与个人文档里。
 
 这篇管两件事：**清单怎么变成 `.nkm`**，以及 **multi / instrument / group / zone 长什么样、哪些字段能程序化写**。
 **动手前先判：要改的东西属于哪一层。**

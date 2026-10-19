@@ -7,13 +7,13 @@
 // 语义和清单里 `mic = CLOSE=off` 的内联写法一致。
 
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs"
-import { EXIT, bullet, parseArgs, parseLuaFile, profilesPath, workspaceDir } from "./lib.mjs"
+import { EXIT, bullet, parseArgs, parseLuaFile, profilesPath, workDir, workspaceDir } from "./lib.mjs"
 import { join } from "node:path"
 
 const args = parseArgs()
 const ws = workspaceDir(args)
-const luaPath = join(ws, "manifest", "profiles.lua")
-const jsonPath = join(ws, "manifest", "profiles.json")
+const luaPath = join(workDir(args), "manifest", "profiles.lua")
+const jsonPath = join(workDir(args), "manifest", "profiles.json")
 
 if (!existsSync(luaPath)) {
   console.error(`[用法] 找不到 ${luaPath}`)

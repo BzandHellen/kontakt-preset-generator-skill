@@ -5,7 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { SKILL_DIR, workspaceDir } from "./lib.mjs"
+import { SKILL_DIR, workDir, workspaceDir } from "./lib.mjs"
 
 const TEMPLATES = join(SKILL_DIR, "templates")
 export const LIB_LUA = join(SKILL_DIR, "scripts", "kontakt_lib.lua")
@@ -70,7 +70,7 @@ export function renderJob(templateFile, job, { args, slug } = {}) {
     .replaceAll("@LIB@", LIB_LUA.replace(/\\/g, "/"))
     .replaceAll("@JOB@", luaValue(job))
 
-  const dir = join(workspaceDir(args), "jobs", `${stamp()}-${slugify(slug ?? job.multi ?? job.nkm ?? "job")}`)
+  const dir = join(workDir(args), "jobs", `${stamp()}-${slugify(slug ?? job.multi ?? job.nkm ?? "job")}`)
   mkdirSync(dir, { recursive: true })
   const file = join(dir, "job.lua")
   writeFileSync(file, src, "utf8")

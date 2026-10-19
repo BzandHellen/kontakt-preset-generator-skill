@@ -758,7 +758,7 @@ export default Plugin.define({
             instance: { type: "string", description: "实例 GUID（cache/apply/verify 必填）" },
             channel: { type: "string", description: "通道地址（cache/verify 必填；apply 可给可省）" },
             multi: { type: "string", description: "multi 名 = Generated\\<multi>.nkm 的名字（cache/apply/verify 必填）" },
-            title: { type: "string", description: "apply 新建通道时的通道名（默认 = multi 名）" },
+            title: { type: "string", description: "apply 建通道时的通道名（默认按约定：库名+乐器名+特殊标识，例 SCS Vln1 / CSS Vc Solo / BB Hn B；multi 名的声部前缀会自动去掉）" },
             from: { type: "string", description: "apply 克隆哪条源通道（默认用 cache 记下的源通道；必须是一条已知能用的 Kontakt 通道）" },
             preset: { type: "string", description: "cache 时存成 VEP 用户预设的相对路径（默认 AI/<multi>）" },
             parent: { type: "string", description: "apply 新建通道放在哪个文件夹下（默认 root）" },

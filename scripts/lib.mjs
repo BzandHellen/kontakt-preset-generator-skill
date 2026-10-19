@@ -62,17 +62,24 @@ export function dbPath(args) {
   return resolve(args?.get?.("db") || join(SKILL_DATA, "kontakt-patches.csv"))
 }
 
+// 工作区的「二级工作目录」：优先 `<工作区>/work`，没有就退回根目录（2026-10-19 目录重排后的兼容写法）
+// 根目录只留：README.md / docs/ / Generated/ / work/；manifest、scripts、Reports、jobs 都在 work/ 下。
+export function workDir(args) {
+  const ws = workspaceDir(args)
+  return existsSync(join(ws, "work")) ? join(ws, "work") : ws
+}
+
 export function manifestPath(args) {
-  return resolve(args?.get?.("manifest") || join(workspaceDir(args), "manifest", "manifest.tsv"))
+  return resolve(args?.get?.("manifest") || join(workDir(args), "manifest", "manifest.tsv"))
 }
 
 export function profilesPath(args) {
-  return resolve(args?.get?.("profiles") || join(workspaceDir(args), "manifest", "profiles.json"))
+  return resolve(args?.get?.("profiles") || join(workDir(args), "manifest", "profiles.json"))
 }
 
 // 迁移前的旧文件；只有 migrate-profiles 与提示信息会用到
 export function legacyProfilesPath(args) {
-  return resolve(join(workspaceDir(args), "manifest", "profiles.lua"))
+  return resolve(join(workDir(args), "manifest", "profiles.lua"))
 }
 
 export function loadProfilesJson(args) {
@@ -86,7 +93,7 @@ export function loadProfilesJson(args) {
 }
 
 export function reportsDir(args) {
-  return resolve(args?.get?.("reports") || join(workspaceDir(args), "Reports"))
+  return resolve(args?.get?.("reports") || join(workDir(args), "Reports"))
 }
 
 // ---------------------------------------------------------------- 配置

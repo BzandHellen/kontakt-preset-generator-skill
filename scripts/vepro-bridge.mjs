@@ -11,6 +11,7 @@
 //   --apply --instance=<id> --multi="<名>" [--title=<通道名>] [--channel=<addr>] [--from=<源通道>]
 //      ⛔ 不要用 channel/add 建裸通道（灌了 state 也不发 MIDI）；不给 --channel 就**克隆 --from** 那条，
 //         或者用缓存里记的源通道（--cache 时记下的）
+//      · 通道名默认按用户约定：**库名+乐器名+特殊标识**（`STR SCS Vln1` → `SCS Vln1`，去掉声部前缀）
 //                                             用缓存建/灌通道（不给 --channel 就新建一条 Kontakt 通道）
 //   --verify --instance=<id> --channel=<addr> --multi="<名>"  导出并与缓存比对
 //
@@ -29,6 +30,19 @@ const ws = workspaceDir(args)
 const cacheDir = `${ws}/Generated/_vepro`.replace(/\\/g, "/")
 const repDir = `${ws}/Reports`.replace(/\\/g, "/")
 if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true })
+
+// ---------------------------------------------------------------- 通道命名规则（用户约定 2026-10-19）
+// 通道名 = **库名 + 乐器名 + 特殊标识**，例：`SCS Vln1`（喷火室内弦乐小提1）/ `CSS Vc Solo` /
+// `BB Hn B`（柏林铜管第二把圆号）。multi 名一般带一个**声部前缀**（STR / BR / WW / PERC / KEY）——
+// 默认把它去掉当通道名（`STR SCS Vln1` → `SCS Vln1`）；不在表里的前缀不动（例如 `CSS Vc Solo` 保持原样）。
+// 想改：`--title="<通道名>"` 显式给。
+const SECTION_PREFIXES = ["STR", "BR", "WW", "WIND", "PERC", "KEY", "SYN", "SYNTH"]
+function channelTitleFor(multiName) {
+  const name = String(multiName).trim()
+  const parts = name.split(/\s+/)
+  if (parts.length > 1 && SECTION_PREFIXES.includes(parts[0].toUpperCase())) return parts.slice(1).join(" ")
+  return name
+}
 
 // ---------------------------------------------------------------- VEP 客户端（stdio JSON-RPC）
 function connect() {
@@ -170,7 +184,8 @@ if (args.bool("apply")) {
     //    克隆出来的通道接线/FX/state 全继承源通道 → 用户实测能响。
     const src = args.get("from", "") || (meta.channel ? String(meta.channel) : "")
     if (!src) fail(`--apply 不给 --channel 时要 --from=<源通道地址>（克隆谁）；或者先 --cache，缓存会记住源通道（这条缓存里${meta.channel ? "有" : "没有"}）`)
-    const title = args.get("title", multi)
+    const title = args.get("title", "") || channelTitleFor(multi)
+    console.log(`  通道名：${title}（规则：库名+乐器名+特殊标识；multi 名「${multi}」去掉声部前缀）`)
     const cl = data(await vep.call("vepro_instance_clonechannels", {
       sourceInstanceId: iid,
       targetInstanceId: iid,
