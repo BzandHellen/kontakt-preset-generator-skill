@@ -134,3 +134,16 @@
     先删旧文件、要求文件确实出现、只对**新写出来**的文件回读 —— 两头都成立才采信。
 51. **一次验证至少同时复现一个已知 PASS 与一个已知 FAIL**（E29）；**判据一律是回读比对**，不用"有没有 protected"猜。
 52. **控制台 / 乱码 / 空列 / 空串 / 空表**：这几样都是"看起来有结论、其实是噪音"的高发区（B11–B14、A7）。
+
+## K. VE Pro（通道侧）
+
+53. **state 只能由 Kontakt 自己产出**：自制 / 拼接的 state 会被静默拒绝（`state/set` 返回 success 但内容不变）。
+    所以每条 multi 至少要**人工在宿主里 File → Load multi 一次**（⛔ 拖动文件会崩，用面板菜单）。
+54. **别用 `channel/add` 建裸通道**：灌了 state 也不发 MIDI，而且没有默认通道条 FX（如 `Vienna Stereo Pan`）。
+    → 正解：**克隆一条 GUI 建的普通乐器通道**（接线/FX/state 全继承），再改名 / 再 `state/set`。
+55. **⛔ 绝对不要拿「实例总线」当克隆源**（`Master Bus` 之类）：会让宿主 **UI 冻死**
+    —— 进程还在、端口仍 Listen，但 `Responding=False`、CPU 空转、API 一律 socket 断；只能强制结束重启。
+    动手前先看清对象：**名字里写着"总线/Master"的，不要拿它做有风险的操作**。
+    工具侧已加硬闸：源通道必须「标题不像 master bus」+「有乐器」+「`fxCount ≥ 1`（有默认通道条）」。
+56. **判"宿主卡死"的判据**（别猜）：`Get-Process <宿主> | Select Responding,CPU` → `Responding=False` +
+    CPU 持续空转 + 端口仍 Listen 但 API 报 `Socket closed while reading response`。

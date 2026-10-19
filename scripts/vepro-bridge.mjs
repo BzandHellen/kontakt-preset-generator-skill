@@ -184,6 +184,29 @@ if (args.bool("apply")) {
     //    克隆出来的通道接线/FX/state 全继承源通道 → 用户实测能响。
     const src = args.get("from", "") || (meta.channel ? String(meta.channel) : "")
     if (!src) fail(`--apply 不给 --channel 时要 --from=<源通道地址>（克隆谁）；或者先 --cache，缓存会记住源通道（这条缓存里${meta.channel ? "有" : "没有"}）`)
+
+    // ⛔ 硬闸（2026-10-19 血案）：**不能拿实例总线 / 非常规通道当克隆源**。
+    //    那天把 `Master Bus`（用户就那一条通道）当 --from 传给 instance/clonechannels，
+    //    VEP 直接卡死：进程还在但 Responding=False、CPU 空转到 2045 秒、API socket 全断。
+    //    正解：让用户先在 VEP 里**新建一条普通 Kontakt 通道**（什么都别载入）当"模板通道"，再 --from=<那条>。
+    const srcInfo = (data(await vep.call("vepro_instance_channelsummary", {
+      instanceId: iid,
+      fields: ["title", "channelAddress", "hasInstrument", "fxCount", "pluginSlots"],
+      discoveryTimeout: 6,
+    })) ?? []).find?.((c) => String(c.channelAddress) === String(src))
+    if (!srcInfo) fail(`找不到源通道 ${src}（instance/channelsummary 里没有）`)
+    const srcTitle = String(srcInfo.title ?? "")
+    if (/master\s*bus|总线/i.test(srcTitle)) {
+      fail(`⛔ 拒绝把「${srcTitle}」当克隆源 —— 它是实例总线；2026-10-19 这么做把 VEP 卡死了（Responding=False、CPU 空转）。
+   请先在 VEP 里新建一条**普通 Kontakt 通道**（什么都别载入）当模板，再 --from=<那条通道>`)
+    }
+    if (!srcInfo.hasInstrument) fail(`⛔ 源通道 ${src}「${srcTitle}」上没有乐器 —— 克隆它建不出能用的通道`)
+    const srcFx = Number(srcInfo.fxCount ?? (Array.isArray(srcInfo.pluginSlots) ? srcInfo.pluginSlots.length : 0))
+    if (!srcFx) {
+      fail(`⛔ 源通道 ${src}「${srcTitle}」没有默认通道条 FX（Vienna Stereo Pan 之类）—— 这像是 API 建的裸通道，
+   那种通道灌了 state 也不发 MIDI。请在 VEP GUI 里新建一条普通 Kontakt 通道当模板。`)
+    }
+    console.log(`  克隆源：${src}「${srcTitle}」（FX ${srcFx} 个 ✓）`)
     const title = args.get("title", "") || channelTitleFor(multi)
     console.log(`  通道名：${title}（规则：库名+乐器名+特殊标识；multi 名「${multi}」去掉声部前缀）`)
     const cl = data(await vep.call("vepro_instance_clonechannels", {
