@@ -221,7 +221,47 @@ if (args.bool("apply")) {
     if (!addr) fail(`instance/clonechannels 失败：${JSON.stringify(cl).slice(0, 300)}`)
     console.log(`  克隆通道：${src} → ${addr}（原标题「${newCh?.title ?? ""}」）`)
     const tr = data(await vep.call("vepro_channel_title_set", { instanceId: iid, selector: { addresses: [addr] }, title }))
-    console.log(`  改名：${addr} → 「${title}」${tr?.status === "success" ? " ✅" : " ⚠ " + JSON.stringify(tr).slice(0, 120)}`)
+    const trOk = tr?.status === "success" || (Array.isArray(tr?.results) && tr.results.every((x) => typeof x?.result === "string"))
+    console.log(`  改名：${addr} → 「${title}」${trOk ? " ✅" : " ⚠ " + JSON.stringify(tr).slice(0, 140)}`)
+
+    // ⚠️ 克隆会把**源通道的 MIDI 路由一起复制** → 必须给克隆体重新分配，
+    //    否则两条通道听同一个 port/ch（2026-10-19 实测：TEMPLATE 与克隆体都在 port1/ch1，
+    //    一个键盘同时弹两台乐器；`instance/midirouting/summary` 会报 duplicates）。
+    if (args.has("midi-ch")) {
+      const mc = Number(args.get("midi-ch"))
+      await vep.call("vepro_channel_midichannel_set", { instanceId: iid, selector: { addresses: [addr] }, midiChannel: mc, discoveryTimeout: 6 })
+      console.log(`  MIDI 路由：${addr} → ch ${mc}（--midi-ch 指定）`)
+    } else {
+      const others = (data(await vep.call("vepro_instance_channelsummary", {
+        instanceId: iid,
+        fields: ["channelAddress", "hasInstrument"],
+        discoveryTimeout: 6,
+      })) ?? []).filter((x) => x.hasInstrument && String(x.channelAddress) !== String(addr))
+      const used = new Set()
+      for (const x of others) {
+        const [pt, chn] = await Promise.all([
+          vep.call("vepro_channel_midiport_get", { instanceId: iid, channelAddress: String(x.channelAddress), discoveryTimeout: 6 }),
+          vep.call("vepro_channel_midichannel_get", { instanceId: iid, channelAddress: String(x.channelAddress), discoveryTimeout: 6 }),
+        ])
+        const p = data(pt)?.port
+        const c = data(chn)
+        if (typeof p === "number" && typeof c === "number" && c >= 1) used.add(`${p}/${c}`)
+      }
+      let freePort = 1
+      let freeCh = 1
+      search: for (let p = 1; p <= 8; p++) {
+        for (let c = 1; c <= 16; c++) {
+          if (!used.has(`${p}/${c}`)) {
+            freePort = p
+            freeCh = c
+            break search
+          }
+        }
+      }
+      await vep.call("vepro_channel_midiport_set", { instanceId: iid, selector: { addresses: [addr] }, midiPort: freePort, discoveryTimeout: 6 })
+      await vep.call("vepro_channel_midichannel_set", { instanceId: iid, selector: { addresses: [addr] }, midiChannel: freeCh, discoveryTimeout: 6 })
+      console.log(`  MIDI 路由：${addr} → port ${freePort} / ch ${freeCh}（自动避开克隆继承来的重复路由；要指定用 --midi-ch）`)
+    }
   }
 
   const set = data(await vep.call("vepro_channel_instrument_state_set", { instanceId: iid, selector: { addresses: [addr] }, blobRef: { blobId: blobRef.blobId, bytes: blobRef.bytes, sha256: blobRef.sha256 }, idempotencyKey: `set-${multi}-${Date.now()}` }))
