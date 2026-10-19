@@ -33,10 +33,10 @@ if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true })
 
 // ---------------------------------------------------------------- 通道命名规则（用户约定 2026-10-19）
 // 通道名 = **库名 + 乐器名 + 特殊标识**，例：`SCS Vln1`（喷火室内弦乐小提1）/ `CSS Vc Solo` /
-// `BB Hn B`（柏林铜管第二把圆号）。multi 名一般带一个**声部前缀**（STR / BR / WW / PERC / KEY）——
-// 默认把它去掉当通道名（`STR SCS Vln1` → `SCS Vln1`）；不在表里的前缀不动（例如 `CSS Vc Solo` 保持原样）。
+// `BB Hn B`（柏林铜管第二把圆号）。multi 名一般带一个**声部前缀**（STR 弦乐 / BRS 铜管 / WW 木管 / PERC 打击 / KEY 键盘）——
+// 默认把它去掉当通道名（`BRS BB Hn Ens` → `BB Hn Ens`）；不在表里的前缀不动（例如 `CSS Vc Solo` 保持原样）。
 // 想改：`--title="<通道名>"` 显式给。
-const SECTION_PREFIXES = ["STR", "BR", "WW", "WIND", "PERC", "KEY", "SYN", "SYNTH"]
+const SECTION_PREFIXES = ["STR", "BRS", "WW", "WIND", "PERC", "KEY", "SYN", "SYNTH"]
 function channelTitleFor(multiName) {
   const name = String(multiName).trim()
   const parts = name.split(/\s+/)
